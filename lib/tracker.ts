@@ -238,7 +238,7 @@ export function seedCollection(): Collection {
       gameWishlist: 'Private',
       hardwareWishlist: 'Private',
     },
-    theme: 'dark',
+    theme: 'light',
     view: 'grid',
   };
 }
