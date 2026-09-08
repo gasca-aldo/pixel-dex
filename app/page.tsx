@@ -298,8 +298,7 @@ function Navigation({
 function Brand({ onHome }: { onHome: () => void }) {
   const { setOpenMobile } = useSidebar();
   return (
-    <RailButton
-      label="Go to My collection"
+    <button
       className="brand"
       aria-label="Go to My collection"
       onClick={() => {
@@ -310,8 +309,8 @@ function Brand({ onHome }: { onHome: () => void }) {
       <span className="brand-icon">
         <Gamepad2 size={23} />
       </span>
-      <span className="brand-name">pixel tracker</span>
-    </RailButton>
+      <span className="brand-name">pixel dex</span>
+    </button>
   );
 }
 export default function Home() {
@@ -1138,7 +1137,7 @@ export default function Home() {
                   <Layers size={14} /> {visible.length}{' '}
                   {visible.length === 1 ? 'item' : 'items'} · Saved on this
                   device
-                  <span>PIXEL TRACKER / PROTOTYPE 01</span>
+                  <span>PIXEL DEX / PROTOTYPE 01</span>
                 </footer>
               </>
             )}
@@ -1510,7 +1509,7 @@ export default function Home() {
                   className="secondary"
                   onClick={() =>
                     download(
-                      'pixel-tracker-backup.json',
+                      'pixel-dex-backup.json',
                       localStorage.getItem(STORAGE) ||
                         JSON.stringify(data, null, 2),
                       'application/json',
@@ -1551,7 +1550,7 @@ export default function Home() {
                     });
                   } catch {
                     setNotice(
-                      'That file is not a valid Pixel Tracker backup. Your collection was not changed.',
+                      'That file is not a valid Pixel Dex backup. Your collection was not changed.',
                     );
                   }
                 }}

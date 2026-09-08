@@ -281,7 +281,7 @@ export function GameLists({ data, commit, renderArt }: CommonProps) {
       );
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = 'pixel-tracker-list.html';
+      anchor.download = 'pixel-dex-list.html';
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {

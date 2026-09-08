@@ -1,10 +1,10 @@
-# Pixel Tracker
+# Pixel Dex
 
 A local-first, responsive prototype for your game, console, and PC collection. Built with React, TypeScript, Vinext/Vite and the starter’s accessible Base UI / Shadcn primitives.
 
 ## Open the prototype
 
-Double-click **Start Pixel Tracker.command** in this folder, then open **http://localhost:3000/**. Keep the terminal open while using it. Stop with Control-C. The launcher uses the bundled Node runtime on this Mac; on another machine install Node 22.13+ and pnpm, then run `pnpm install` and `pnpm dev`.
+Double-click **Start Pixel Dex.command** in this folder, then open **http://localhost:3000/**. Keep the terminal open while using it. Stop with Control-C. The launcher uses the bundled Node runtime on this Mac; on another machine install Node 22.13+ and pnpm, then run `pnpm install` and `pnpm dev`.
 
 ## What works
 

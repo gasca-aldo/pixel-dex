@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 export const metadata: Metadata = {
-  title: 'Pixel Tracker — Your collection',
+  title: 'Pixel Dex — Your collection',
   description: 'A personal home for your games, consoles, and PC builds.',
   manifest: '/manifest.webmanifest',
 };
