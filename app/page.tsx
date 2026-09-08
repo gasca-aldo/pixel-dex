@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Gamepad2,
+  LogOut,
   UserRound,
   House,
   CalendarDays,
@@ -95,6 +96,7 @@ import {
 } from '@/lib/tracker';
 import { getSupabase } from '@/lib/supabase';
 import { draftKey, loadLibrary, saveLibrary } from '@/lib/account-library';
+import { Button } from '@/components/ui/button';
 import { AccountStatus } from '@/components/account-status';
 import { covers } from '@/lib/covers';
 import {
@@ -317,7 +319,7 @@ function Brand({ onHome }: { onHome: () => void }) {
   );
 }
 export default function Home() {
-  const [data, setData] = useState<Collection>(() => seedCollection());
+  const [data, setData] = useState<Collection>(() => ({...seedCollection(), items: [], lists: [], profile: undefined}));
   const dataRef = useRef(data);
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState('');
@@ -354,26 +356,46 @@ export default function Home() {
   const saving = useRef(false);
   const [sync, setSync] = useState('Loading library…');
   const [account, setAccount] = useState(false);
+  const [accountEmail, setAccountEmail] = useState('');
+  const [loggingOut, setLoggingOut] = useState(false);
+  const signingOut = useRef(false);
   const [canImport, setCanImport] = useState(false);
   const [hasDraft, setHasDraft] = useState(false);
   useEffect(() => {
     let active = true;
     let loaded = false;
+    let invalidated = false;
     const auth = getSupabase().auth;
     const {data: listener} = auth.onAuthStateChange((_event, session) => {
-      if(loaded && (session?.user.id ?? null) !== owner.current) window.location.reload();
+      if(loaded && (session?.user.id ?? null) !== owner.current) {
+        invalidated=true; setReady(false);
+        dataRef.current={...seedCollection(),items:[],lists:[],profile:undefined};
+        setData(dataRef.current);setDraft(null);setDetail(null);owner.current=null;
+        window.location.replace(session?'/':'/login');
+      }
     });
     async function initialize() {
       try {
         const {data: sessionData, error: sessionError} = await auth.getSession();
         if(sessionError) throw sessionError;
-        const id = sessionData.session?.user.id ?? null;
+        if(!sessionData.session) { window.location.replace('/login'); return; }
+        const {data: verified, error: verifyError} = await auth.getUser();
+        if(verifyError) {
+          if(verifyError.status === 401 || verifyError.status === 403) { window.location.replace('/login'); return; }
+          throw new Error('Unable to verify your session. Check your connection and try again.');
+        }
+        if(!verified.user) { window.location.replace('/login'); return; }
+        if(!active) return;
+        const id = verified.user.id;
+        setAccountEmail(verified.user.email ?? '');
         owner.current = id;
         loaded = true;
         if(id) {
           if(active) { setAccount(true); setData({...seedCollection(),items:[],lists:[],profile:undefined}); }
           const remote = await loadLibrary(id);
-          if(!active) return;
+          if(!active || invalidated || owner.current!==id) return;
+          const {data: currentSession}=await auth.getSession();
+          if(currentSession.session?.user.id!==id || invalidated || !active) return;
           revision.current = remote?.revision ?? 0;
           let collection: Collection = remote?.payload ?? {...seedCollection(),items:[],lists:[],profile:undefined,collectionVisibility:'Private'};
           const pending = localStorage.getItem(draftKey(id));
@@ -391,22 +413,16 @@ export default function Home() {
           dataRef.current = collection; setData(collection);
           setCanImport(!remote && !pending && !!localStorage.getItem(STORAGE));
           setSync(pending ? 'Check unsaved changes' : remote ? 'Saved to your account' : 'Account library ready');
-        } else {
-          const saved = localStorage.getItem(STORAGE);
-          if(saved) {
-            const parsed: unknown = JSON.parse(saved);
-            if(!validCollection(parsed)) throw new Error('Your browser library could not be read. It has been left untouched.');
-            dataRef.current = parsed; setData(parsed);
-          } else localStorage.setItem(STORAGE, JSON.stringify(dataRef.current));
-          setSync('Local library · Sign in to save to your account');
         }
-        if(active) setReady(true);
+        if(active && !invalidated) setReady(true);
       } catch(e) { if(active) {setStorageError(e instanceof Error ? e.message : 'Unable to load your library. Please reload.');setSync('Library unavailable');} }
     }
     void initialize();
     const preventLoss = (e: BeforeUnloadEvent) => { if(saving.current) {e.preventDefault(); e.returnValue='';} };
+    const restore=(event:PageTransitionEvent)=>{if(event.persisted){setReady(false);window.location.reload();}};
+    window.addEventListener('pageshow',restore);
     window.addEventListener('beforeunload',preventLoss);
-    return () => {active=false; listener.subscription.unsubscribe();window.removeEventListener('beforeunload',preventLoss);};
+    return () => {active=false; listener.subscription.unsubscribe();window.removeEventListener('beforeunload',preventLoss);window.removeEventListener('pageshow',restore);};
   }, []);
   async function pushAccount(next: Collection) {
     const id = owner.current;
@@ -431,7 +447,7 @@ export default function Home() {
   }, [notice]);
   function commit(next: Collection, recover = false) {
     try {
-      if (!ready || saving.current || (storageError && (owner.current || !recover))) {
+      if (!ready || signingOut.current || saving.current || (storageError && (owner.current || !recover))) {
         setNotice('Please finish saving or resolve the library error before making another change.');
         return false;
       }
@@ -590,6 +606,10 @@ export default function Home() {
     } catch {}
     return () => controller.abort();
   }, []);
+  if (!ready) return <main className="account-page"><section className="account-card">
+    <a className="account-brand" href="/login">pixel dex</a>
+    {storageError ? <><h1>Unable to open your library</h1><p role="alert">{storageError}</p><button className="secondary" onClick={() => window.location.reload()}>Try again</button><a href="/login">Go to sign in</a></> : <p role="status">Checking your session…</p>}
+  </section></main>;
   return (
     <TooltipProvider>
       <SidebarProvider
@@ -680,6 +700,8 @@ export default function Home() {
                 </>
               )}
             </span>
+            <div className="topbar-actions">
+            <span className="signed-in-email" title={accountEmail}>{accountEmail}</span>
             {!isOverview && (
               <button className="private" onClick={() => setSharing(true)}>
                 {visibility === 'Private' ? (
@@ -693,6 +715,20 @@ export default function Home() {
                 {visibility !== 'Private' && '· Preview'}
               </button>
             )}
+            <Button variant="ghost" className="sign-out-button" disabled={loggingOut || sync === 'Saving…'} onClick={async () => {
+              if (signingOut.current || saving.current) return;
+              signingOut.current = true; setLoggingOut(true);
+              try {
+                const {error} = await getSupabase().auth.signOut({scope:'local'});
+                if(error) throw error;
+                setReady(false);
+                window.location.replace('/login');
+              } catch {
+                signingOut.current = false; setLoggingOut(false);
+                setNotice('Unable to sign out. Please check your connection and try again.');
+              }
+            }}><LogOut size={16} aria-hidden="true" /><span>{loggingOut ? 'Signing out…' : 'Sign out'}</span></Button>
+            </div>
           </header>
           <div className="page">
             <p role="status" className="library-sync-status">{sync}</p>

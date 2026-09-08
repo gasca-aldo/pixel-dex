@@ -39,6 +39,15 @@ test('Supabase sharing enforces owner, public, unlisted and private boundaries',
   await assert.rejects(db.query('select public.save_account_library($1,1,$2)',[library,owner]));
   await assert.rejects(db.query("select public.claim_profile_handle('aldo')"));
  });
+ await t.test('two accounts save and reload different independent collections',async()=>{
+  await as('authenticated',stranger);
+  const separate={...library,items:[{id:'second-only',title:'Second account game'}],lists:[]};
+  await db.query('select public.save_account_library($1,0,$2)',[separate,stranger]);
+  let rows=(await db.query('select user_id,payload from public.account_libraries')).rows;
+  assert.equal(rows.length,1);assert.equal(rows[0].user_id,stranger);assert.equal(rows[0].payload.items[0].id,'second-only');
+  await as('authenticated',owner);rows=(await db.query('select user_id,payload from public.account_libraries')).rows;
+  assert.equal(rows.length,1);assert.equal(rows[0].user_id,owner);assert.equal(rows[0].payload.items[0].id,'item');
+ });
  await t.test('owner reads private notes and stale saves fail',async()=>{
   await as('authenticated',owner);assert.equal((await list('private')).list.entries[0].note,'private-note');
   await assert.rejects(db.query('select public.save_account_library($1,0,$2)',[library,owner]));

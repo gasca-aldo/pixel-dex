@@ -74,3 +74,11 @@ Private lists resolve only for their owner, unlisted lists resolve by direct lin
 `node --experimental-strip-types --test tests/*.mjs` runs library tests and actual PostgreSQL permission tests using an ephemeral PGlite instance (no cloud data involved).
 
 For Cloudflare, run `pnpm exec wrangler login` and `pnpm deploy`. The local build reads the two public Supabase variables from `.env.local`. No privileged Supabase key is required. After publishing, set Supabase Site URL to the deployed HTTPS origin and allow its `/auth/callback` redirect. Retain the localhost callback for development. Add the deployed origin to the Google OAuth client's JavaScript origins; Google's redirect URI remains the Supabase callback.
+
+## Login limits and test accounts
+
+Password sign-in through `/api/login` permits 10 attempts per rolling 15-minute window per Cloudflare client IP. A SQLite Durable Object stores only attempt timestamps per hashed IP. The endpoint proxies password verification to Supabase and returns session tokens with no-store headers; request bodies and passwords are not logged by the application. Supabase's directly accessible Auth API retains its own rate limits; this application limiter does not override or secure every Supabase entrypoint. Google OAuth, sign-up, recovery, and refresh use Supabase's existing controls.
+
+Test-only users with `@test.com` addresses must be created as confirmed users using Supabase admin user creation (email_confirm=true). No public email-verification bypass is added. Do not disable verification for all users. A publishable key cannot create admin-confirmed users.
+
+The private library checks the requested user ID on reads, clears state when the active account changes, and rejects late responses for an invalidated session. The active email is displayed in the header. PostgreSQL tests cover independent records for two users.

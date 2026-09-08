@@ -15,7 +15,9 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
 const localBindingConfig = {
   name: 'pixel-dex',
   workers_dev: true,
-  main: 'vinext/server/fetch-handler',
+  main: './worker.ts',
+  durable_objects: {bindings:[{name:'LOGIN_LIMITER',class_name:'LoginLimiter'}]},
+  migrations:[{tag:'login-limiter-v1',new_sqlite_classes:['LoginLimiter']}],
   compatibility_flags: ['nodejs_compat'],
   d1_databases: d1
     ? [

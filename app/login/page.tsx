@@ -41,13 +41,22 @@ export default function LoginPage() {
         setPassword('');
         window.location.replace('/');
       } else if(mode === 'login') {
-        const {error} = await auth.signInWithPassword({email: email.trim(), password});
+        const response=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.trim(),password})});
+        const result=await response.json() as {retryAfter?:number;error?:string;access_token?:string;refresh_token?:string};
+        if(!response.ok) throw new Error(result.retryAfter ? `Too many attempts. Try again in ${Math.ceil(result.retryAfter/60)} minutes.` : result.error || 'Unable to sign in.');
+        if(!result.access_token || !result.refresh_token) throw new Error('Unable to complete sign-in.');
+        const {error}=await auth.setSession({access_token:result.access_token,refresh_token:result.refresh_token});
         if(error) throw error;
         window.location.assign('/');
       } else if(mode === 'signup') {
-        const {error} = await auth.signUp({email: email.trim(), password, options: {emailRedirectTo: redirectTo}});
+        const {data, error} = await auth.signUp({email: email.trim(), password, options: {emailRedirectTo: redirectTo}});
         if(error) throw error;
-        setPassword(''); setMessage('Check your email for a confirmation link. If you already have an account, sign in or reset your password.');
+        setPassword('');
+        if(data.session) {
+          window.location.replace('/');
+          return;
+        }
+        setMessage('Check your email for a confirmation link. If you already have an account, sign in or reset your password.');
       } else {
         const {error} = await auth.resetPasswordForEmail(email.trim(), {redirectTo});
         if(error) throw error;
@@ -60,7 +69,7 @@ export default function LoginPage() {
     <h1>{user ? 'Your account' : mode === 'signup' ? 'Create an account' : mode === 'reset' ? 'Reset your password' : 'Welcome back'}</h1>
     {loading ? <p role="status">Checking your account…</p> : <>
       {user ? <p>Signed in as {user.email}</p> : mode !== 'reset' && <><Button disabled={busy} variant="outline" onClick={() => run(async () => {
-        const {error} = await getSupabase().auth.signInWithOAuth({provider:'google', options:{redirectTo: window.location.origin + '/auth/callback'}});
+        const {error} = await getSupabase().auth.signInWithOAuth({provider:'google', options:{redirectTo: window.location.origin + '/auth/callback',queryParams:{prompt:'select_account'}}});
         if(error) throw error;
       })}>Continue with Google</Button><p className="account-divider">or use email</p></>}
       <form onSubmit={submit}>
