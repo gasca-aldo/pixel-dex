@@ -2602,3 +2602,38 @@ h1 {
     height: 150px;
   }
 }
+
+.account-page { min-height:100dvh; display:grid; place-items:center; padding:32px 20px; background:var(--background); color:var(--foreground); }
+.account-card { width:100%; max-width:420px; padding:32px; border:1px solid var(--border); border-radius:20px; background:var(--card); display:grid; gap:20px; }
+.account-brand { font-size:22px; font-weight:700; color:var(--primary); text-decoration:none; }
+.account-card h1 { font-size:26px; font-weight:600; margin:0; }
+.account-card form, .account-card label { display:grid; gap:10px; }
+.account-card form { gap:20px; }
+.account-card nav { display:flex; flex-wrap:wrap; justify-content:center; }
+.account-divider, .account-local-note { font-size:13px; color:var(--muted-foreground); }
+.account-divider { text-align:center; margin:0; }
+.account-card small { color:var(--muted-foreground); }
+.account-card [role=alert] { color:#b4233e; }
+
+.library-sync-status {font-size:12px;color:var(--muted-foreground);margin:0 0 12px;}
+
+.profile-address {padding:20px;border:1px solid var(--border);border-radius:16px;margin-bottom:24px;background:var(--card);}
+.profile-address h3 {font-weight:600;margin-bottom:12px;}
+.profile-address form {display:grid;gap:10px;max-width:420px;}
+.profile-address p {color:var(--muted-foreground);font-size:14px;margin-bottom:14px;}
+.share-link-control {display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.share-link-control p {font-size:13px;margin:0;}
+.share-link-control input {max-width:460px;}
+.shared-page {max-width:1100px;margin:auto;padding:24px;background:var(--background);color:var(--foreground);min-height:100dvh;}
+.shared-nav {display:flex;justify-content:space-between;align-items:center;margin-bottom:48px;}
+.shared-page section {margin:32px 0;}
+.shared-page h1 {font-size:30px;font-weight:600;}
+.shared-page h2 {font-size:22px;font-weight:600;margin-bottom:16px;}
+.shared-page a {text-decoration:none;}
+.shared-cover {aspect-ratio:2/3;display:grid;place-items:center;background:var(--muted);border-radius:10px;overflow:hidden;min-width:0;}
+.shared-cover img {width:100%;height:100%;object-fit:cover;}
+.shared-page .top-six-card h3 {font-size:14px;}
+.shared-page .top-six-grid {grid-template-columns:repeat(auto-fit,minmax(100px,140px));}
+.shared-owner {display:inline-block;margin-bottom:24px;color:var(--primary);}
+.shared-collection {display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:20px;}
+.shared-collection h3 {font-size:14px;margin:8px 0;}

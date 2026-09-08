@@ -13,6 +13,8 @@ const { d1, r2 } = hostingConfig;
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
 
 const localBindingConfig = {
+  name: 'pixel-dex',
+  workers_dev: true,
   main: 'vinext/server/fetch-handler',
   compatibility_flags: ['nodejs_compat'],
   d1_databases: d1

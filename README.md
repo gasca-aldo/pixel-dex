@@ -24,7 +24,7 @@ Records and preferences persist in browser localStorage, under `pixel-tracker:v1
 
 Sample content is preloaded once. Clear it in Settings when ready. Cover art is loaded from Steam’s publisher-provided CDN; it needs network access. There is no account or launcher integration, and catalog search is local to the sample catalog. Console/custom entries use a device icon and title when no artwork is available. Release dates are user-entered, not live catalog data.
 
-Private, Unlisted, and Public settings are stored per collection to preview the future sharing flow. All records remain local; those settings do not publish anything or create a live link. The HTML snapshot export is a genuinely shareable, read-only file and includes the chosen collection’s notes.
+Collections are Private or Public. Lists are Private, Unlisted, or Public; their entry notes follow list visibility. Shared HTML snapshots are separate exported copies and cannot be revoked after download.
 
 Optional WebMCP hooks expose collection reading and opening an unsaved entry form when supported. No compatible runtime was available for their contract validation; they are not required for the application.
 
@@ -38,7 +38,7 @@ Optional WebMCP hooks expose collection reading and opening an unsaved entry for
 
 Run `pnpm exec tsc --noEmit`, `node --experimental-strip-types --test tests/tracker.test.mjs`, and `pnpm build`. `pnpm format` formats source.
 
-No hosted service, account, database, or deployment is configured. A future version can replace the collection persistence adapter with a server API, add catalog search, and enforce collection permissions on the server.
+Accounts and cloud libraries use Supabase. Apply the migrations below before enabling shared pages. IGDB integration is pending.
 
 ## Dashboard and releases
 
@@ -52,6 +52,25 @@ Games → Lists creates independent named lists with descriptions, per-game note
 
 Profile → Edit profile sets the display name, bio, and up to six unranked favorites. Visitor preview shows those favorites independently of collection access. One Private/Public setting now controls the entire collection. The legacy per-section values remain in existing backups for compatibility, but no longer control the UI; until a new choice is saved, the collection defaults to Private unless all old sections were Public. The collection preview exposes only titles, platforms, kinds, and owned/wishlisted labels—not personal notes, reviews, or upgrade history.
 
-All of these controls remain local prototype previews. No account, live URL, server-enforced permission, or public publication is created. Public-profile and list projections are deliberately separated from private data, ready for the future backend. Existing saves load without losing data; optional lists and profile fields are validated during import. Clearing collection records preserves lists and profile favorites.
+Public profiles and lists use restricted Supabase functions that select allowed fields directly from the current library. Existing saves load without losing data; optional lists and profile fields are validated during import. Clearing collection records preserves lists and profile favorites.
 
 Social model checks: `node --experimental-strip-types --test tests/social.test.mjs`.
+
+## Account libraries (development)
+
+Google and email login use Supabase. Configure `.env.local` using `.env.example`.
+Run `supabase/migrations/202609080001_account_libraries.sql` once in the Supabase SQL Editor before testing account storage. This creates an owner-only library table and an atomic version-checked save function. No anonymous access is granted to this table; shared pages use the projection functions from the second migration.
+
+Signed-out users retain the existing browser library. Signed-in accounts start empty and may explicitly import the browser library from Settings. Account drafts are stored under a user-specific key until the remote save is confirmed. Conflicting edits are blocked; export the draft before choosing to load the account version. New devices load the latest account library on opening the app. Existing tabs detect stale revisions on save; live collaborative updates are not implemented.
+
+Validation still required against your Supabase project: sign in as two distinct users, save and reload each library, verify the second user cannot read the first user's row or save with their owner ID, and test the same account from two browsers for revision conflicts. Test failed-network saves and recovery. The migration has not been applied automatically.
+
+## Shared pages and Cloudflare
+
+Run `supabase/migrations/202609080002_shared_pages.sql` once after the account library migration. Choose a username in My profile. Profile addresses are `/p/username`; list addresses are `/p/username/title-stable-id`. Usernames are permanent for this initial release, and list addresses survive title changes.
+
+Private lists resolve only for their owner, unlisted lists resolve by direct link but never appear in the public profile, and public lists appear on the profile. Notes inherit the list visibility. The database checks the latest visibility on every request; already viewed or downloaded content cannot be recalled. Open shared pages refresh on focus and every 30 seconds.
+
+`node --experimental-strip-types --test tests/*.mjs` runs library tests and actual PostgreSQL permission tests using an ephemeral PGlite instance (no cloud data involved).
+
+For Cloudflare, run `pnpm exec wrangler login` and `pnpm deploy`. The local build reads the two public Supabase variables from `.env.local`. No privileged Supabase key is required. After publishing, set Supabase Site URL to the deployed HTTPS origin and allow its `/auth/callback` redirect. Retain the localhost callback for development. Add the deployed origin to the Google OAuth client's JavaScript origins; Google's redirect URI remains the Supabase callback.

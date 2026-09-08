@@ -1,4 +1,5 @@
 'use client';
+import { ProfileAddress, ShareLink } from '@/components/sharing-controls';
 import { useState, type ReactNode } from 'react';
 import {
   Plus,
@@ -474,6 +475,7 @@ export function GameLists({ data, commit, renderArt }: CommonProps) {
           <div className="list-bottom-actions">
             {list.visibility !== 'Private' && (
               <>
+                <ShareLink listId={list.id} />
                 <button className="secondary" onClick={() => setPreview(true)}>
                   <Eye size={16} /> Shared preview
                 </button>
@@ -487,8 +489,7 @@ export function GameLists({ data, commit, renderArt }: CommonProps) {
             </button>
           </div>
           <p className="dialog-footnote">
-            Visibility is saved for the prototype. No live public link is
-            created yet.
+            Notes are visible to everyone who can access this list. Save changes to your account before sharing.
           </p>
         </>
       ) : (
@@ -647,6 +648,7 @@ export function PlayerPage({ data, commit, renderArt }: CommonProps) {
           </button>
         )}
       </div>
+      {!visitor && <ProfileAddress />}
       <div className="player-header">
         <div className="player-avatar">
           <UserRound size={33} />
@@ -813,7 +815,7 @@ export function PlayerPage({ data, commit, renderArt }: CommonProps) {
         )}
       </section>
       <p className="dialog-footnote">
-        Profile preview only. Nothing is published from this local prototype.
+        Your public profile shows your saved account data. Private and unlisted lists stay off your profile.
       </p>
       <Dialog open={editing && !picking} onOpenChange={setEditing}>
         <DialogContent className="profile-edit-dialog">

@@ -93,6 +93,9 @@ import {
   type Kind,
   type Collection,
 } from '@/lib/tracker';
+import { getSupabase } from '@/lib/supabase';
+import { draftKey, loadLibrary, saveLibrary } from '@/lib/account-library';
+import { AccountStatus } from '@/components/account-status';
 import { covers } from '@/lib/covers';
 import {
   GameLists,
@@ -346,28 +349,78 @@ export default function Home() {
     run: () => void;
   } | null>(null);
   const upload = useRef<HTMLInputElement>(null);
+  const owner = useRef<string | null>(null);
+  const revision = useRef(0);
+  const saving = useRef(false);
+  const [sync, setSync] = useState('Loading library…');
+  const [account, setAccount] = useState(false);
+  const [canImport, setCanImport] = useState(false);
+  const [hasDraft, setHasDraft] = useState(false);
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE);
-      if (saved) {
-        const parsed: unknown = JSON.parse(saved);
-        if (validCollection(parsed)) {
-          dataRef.current = parsed;
-          setData(parsed);
-        } else
-          setStorageError(
-            'Your saved collection could not be read. It has been left untouched; editing is disabled. Export a backup in Settings to preserve the original file.',
-          );
-      } else {
-        localStorage.setItem(STORAGE, JSON.stringify(dataRef.current));
-      }
-    } catch {
-      setStorageError(
-        'Device storage is unavailable. Your changes cannot be saved in this browser.',
-      );
+    let active = true;
+    let loaded = false;
+    const auth = getSupabase().auth;
+    const {data: listener} = auth.onAuthStateChange((_event, session) => {
+      if(loaded && (session?.user.id ?? null) !== owner.current) window.location.reload();
+    });
+    async function initialize() {
+      try {
+        const {data: sessionData, error: sessionError} = await auth.getSession();
+        if(sessionError) throw sessionError;
+        const id = sessionData.session?.user.id ?? null;
+        owner.current = id;
+        loaded = true;
+        if(id) {
+          if(active) { setAccount(true); setData({...seedCollection(),items:[],lists:[],profile:undefined}); }
+          const remote = await loadLibrary(id);
+          if(!active) return;
+          revision.current = remote?.revision ?? 0;
+          let collection: Collection = remote?.payload ?? {...seedCollection(),items:[],lists:[],profile:undefined,collectionVisibility:'Private'};
+          const pending = localStorage.getItem(draftKey(id));
+          if(pending) {
+            const draft = JSON.parse(pending);
+            if(!validCollection(draft.payload) || !Number.isInteger(draft.revision)) throw new Error('The saved browser draft is unreadable. It has been preserved.');
+            if(remote && JSON.stringify(remote.payload) === JSON.stringify(draft.payload)) localStorage.removeItem(draftKey(id));
+            else {
+              collection = draft.payload;
+              revision.current = draft.revision;
+              setHasDraft(true);
+              setStorageError('You have an unsaved browser draft. Retry saving, or export it before loading the account version.');
+            }
+          }
+          dataRef.current = collection; setData(collection);
+          setCanImport(!remote && !pending && !!localStorage.getItem(STORAGE));
+          setSync(pending ? 'Check unsaved changes' : remote ? 'Saved to your account' : 'Account library ready');
+        } else {
+          const saved = localStorage.getItem(STORAGE);
+          if(saved) {
+            const parsed: unknown = JSON.parse(saved);
+            if(!validCollection(parsed)) throw new Error('Your browser library could not be read. It has been left untouched.');
+            dataRef.current = parsed; setData(parsed);
+          } else localStorage.setItem(STORAGE, JSON.stringify(dataRef.current));
+          setSync('Local library · Sign in to save to your account');
+        }
+        if(active) setReady(true);
+      } catch(e) { if(active) {setStorageError(e instanceof Error ? e.message : 'Unable to load your library. Please reload.');setSync('Library unavailable');} }
     }
-    setReady(true);
+    void initialize();
+    const preventLoss = (e: BeforeUnloadEvent) => { if(saving.current) {e.preventDefault(); e.returnValue='';} };
+    window.addEventListener('beforeunload',preventLoss);
+    return () => {active=false; listener.subscription.unsubscribe();window.removeEventListener('beforeunload',preventLoss);};
   }, []);
+  async function pushAccount(next: Collection) {
+    const id = owner.current;
+    if(!id || saving.current) return;
+    saving.current = true; setSync('Saving…');
+    try {
+      revision.current = await saveLibrary(next, revision.current, id);
+      localStorage.removeItem(draftKey(id));
+      setHasDraft(false); setStorageError(''); setCanImport(false); setSync('Saved to your account');
+    } catch(e) {
+      setHasDraft(true); setSync('Not saved to account');
+      setStorageError(e instanceof Error ? e.message : 'Save failed. Your browser draft has been kept.');
+    } finally {saving.current=false;}
+  }
   useEffect(() => {
     document.documentElement.classList.toggle('dark', data.theme === 'dark');
   }, [data.theme]);
@@ -378,21 +431,22 @@ export default function Home() {
   }, [notice]);
   function commit(next: Collection, recover = false) {
     try {
-      if (!ready || (storageError && !recover)) {
-        setNotice(
-          'Changes cannot be saved while device storage is unavailable.',
-        );
+      if (!ready || saving.current || (storageError && (owner.current || !recover))) {
+        setNotice('Please finish saving or resolve the library error before making another change.');
         return false;
       }
-      localStorage.setItem(STORAGE, JSON.stringify(next));
-      dataRef.current = next;
-      setData(next);
-      if (recover) setStorageError('');
+      if(owner.current) {
+        localStorage.setItem(draftKey(owner.current), JSON.stringify({payload:next, revision:revision.current}));
+        dataRef.current=next; setData(next); setHasDraft(true);
+        void pushAccount(next);
+      } else {
+        localStorage.setItem(STORAGE, JSON.stringify(next));
+        dataRef.current=next; setData(next);
+        if(recover) setStorageError('');
+      }
       return true;
     } catch {
-      setNotice(
-        'Unable to save. Device storage may be full. Export a backup in Settings.',
-      );
+      setNotice('Unable to keep a recovery copy. Export a backup and free some browser storage before editing.');
       return false;
     }
   }
@@ -641,6 +695,8 @@ export default function Home() {
             )}
           </header>
           <div className="page">
+            <p role="status" className="library-sync-status">{sync}</p>
+            {hasDraft && <div className="detail-actions"><button className="secondary" disabled={sync === 'Saving…'} onClick={() => void pushAccount(dataRef.current)}>Retry save</button><button className="secondary" onClick={() => download('pixel-dex-unsaved.json',JSON.stringify(dataRef.current,null,2),'application/json')}>Export unsaved copy</button><button className="secondary" disabled={sync === 'Saving…'} onClick={() => setConfirm({title:'Load saved account library?',description:'This discards the unsaved browser draft. Export it first if you want to keep it.',run:() => {if(owner.current) localStorage.removeItem(draftKey(owner.current)); window.location.reload();}})}>Load account version</button></div>}
             {storageError && (
               <div className="warning" role="alert">
                 {storageError}
@@ -1477,8 +1533,7 @@ export default function Home() {
               <UserRound size={17} /> Open profile
             </button>
             <p className="dialog-footnote">
-              These settings control the local preview. Nothing is published
-              yet.
+              Saved account settings control access to your public profile and collection.
             </p>
           </DialogContent>
         </Dialog>
@@ -1486,8 +1541,10 @@ export default function Home() {
           <DialogContent className="settings-dialog">
             <DialogTitle>Your space, your way</DialogTitle>
             <DialogDescription>
-              Appearance and local collection data.
+              Account, appearance, and collection data.
             </DialogDescription>
+            <AccountStatus />
+            {canImport && <div className="settings-section"><h3>Bring your local library</h3><p>This account has no saved library yet. Import the collection from this browser, including lists and notes.</p><button className="secondary" onClick={() => setConfirm({title:'Import browser library into this account?',description:'Only import if this browser library belongs to you. The original local copy will be kept.',run:() => {try {const value=JSON.parse(localStorage.getItem(STORAGE)||'null'); if(!validCollection(value)) throw new Error(); commit(value);} catch {setNotice('The local collection could not be imported.');}}})}>Import browser library</button></div>}
             <Field label="Appearance">
               <Picker
                 label="Theme"
@@ -1510,7 +1567,7 @@ export default function Home() {
                   onClick={() =>
                     download(
                       'pixel-dex-backup.json',
-                      localStorage.getItem(STORAGE) ||
+                      (account ? JSON.stringify(dataRef.current, null, 2) : localStorage.getItem(STORAGE)) ||
                         JSON.stringify(data, null, 2),
                       'application/json',
                     )
