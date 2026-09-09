@@ -35,12 +35,20 @@ type Props = {
 function useToday() {
   const [today, setToday] = useState(() => todayKey());
   useEffect(() => {
-    const refresh = () => setToday(todayKey());
-    const timer = setInterval(refresh, 60000);
-    window.addEventListener('focus', refresh);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = () => {
+      clearTimeout(timer);
+      if (document.visibilityState !== 'visible') return;
+      setToday(todayKey());
+      const now = new Date();
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      timer = setTimeout(refresh, midnight.getTime() - now.getTime() + 1000);
+    };
+    refresh();
+    document.addEventListener('visibilitychange', refresh);
     return () => {
-      clearInterval(timer);
-      window.removeEventListener('focus', refresh);
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', refresh);
     };
   }, []);
   return today;

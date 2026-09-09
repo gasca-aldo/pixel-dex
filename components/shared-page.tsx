@@ -9,30 +9,49 @@ type SharedList=GameList & {slug:string};
 type Profile={handle:string;name:string;bio:string;topGames:GameRef[];lists:SharedList[];collection:({id:string;title:string;kind:string;owned:boolean;platform:string;catalogId?:string}[])|null};
 function Art({game}:{game:GameRef}) {
  const [broken,setBroken]=useState(false); const url=game.catalogId?covers[game.catalogId]:undefined;
- return <div className="shared-cover">{url&&!broken?<img src={url} alt={game.title} loading="lazy" onError={()=>setBroken(true)}/>:<Gamepad2 aria-label={game.title}/>}</div>;
+ return <div className="shared-cover">{url&&!broken?<img src={url} alt={game.title} loading="lazy" decoding="async" onError={()=>setBroken(true)}/>:<Gamepad2 aria-label={game.title}/>}</div>;
 }
 export function SharedPage({handle,slug}:{handle:string;slug?:string}) {
  const [profile,setProfile]=useState<Profile|null>(null);const [list,setList]=useState<SharedList|null>(null);
  const [name,setName]=useState('');const [loading,setLoading]=useState(true);const [error,setError]=useState('');
  useEffect(()=>{
-   let active=true;let request=0;
+   let active=true;
+   let busy=false;
+   let previous='';
+   let lastStarted=0;
+   let timer: ReturnType<typeof setTimeout> | undefined;
+   let controller: AbortController | undefined;
+   function schedule() {
+     clearTimeout(timer);
+     if(active && document.visibilityState==='visible') timer=setTimeout(()=>void load(),30000);
+   }
    async function load() {
-     const ticket=++request;
+     if(!active || busy || document.visibilityState!=='visible') return;
+     busy=true;lastStarted=Date.now();
+     controller=new AbortController();
+     const timeout=setTimeout(()=>controller?.abort(),15000);
      try {
        const db=getSupabase();
-       // Supabase waits for session initialization and passes the signed-in token to the database.
-       const {data,error}=await db.rpc(slug?'read_shared_list':'read_shared_profile',slug?{profile_handle:handle,list_slug:slug}:{profile_handle:handle});
-       if(!active || ticket!==request)return;
+       const {data,error}=await db.rpc(slug?'read_shared_list':'read_shared_profile',slug?{profile_handle:handle,list_slug:slug}:{profile_handle:handle}).abortSignal(controller.signal);
+       if(!active)return;
        if(error)throw new Error('Unable to load this page. Please try again.');
-       setError('');setProfile(slug?null:data);setList(slug?data?.list??null:null);setName(data?.name??'');
-     }catch(e){if(active&&ticket===request){setError(e instanceof Error?e.message:'Unable to load page.');setProfile(null);setList(null);}}
-     finally{if(active&&ticket===request)setLoading(false);}
+       const signature=JSON.stringify(data);
+       setError('');
+       if(signature!==previous) {
+         previous=signature;
+         setProfile(slug?null:data);setList(slug?data?.list??null:null);setName(data?.name??'');
+       }
+     }catch(e){if(active){previous='';setError(e instanceof Error?e.message:'Unable to load page.');setProfile(null);setList(null);}}
+     finally{clearTimeout(timeout);busy=false;if(active){setLoading(false);schedule();}}
    }
+   const onVisible=()=>{
+     if(document.visibilityState!=='visible'){clearTimeout(timer);return;}
+     if(Date.now()-lastStarted>=1000)void load();else schedule();
+   };
    void load();
-   const onFocus=()=>{if(document.visibilityState==='visible')void load();};
-   const timer=window.setInterval(onFocus,30000);
-   window.addEventListener('focus',onFocus);document.addEventListener('visibilitychange',onFocus);
-   return()=>{active=false;clearInterval(timer);window.removeEventListener('focus',onFocus);document.removeEventListener('visibilitychange',onFocus);};
+   document.addEventListener('visibilitychange',onVisible);
+   window.addEventListener('focus',onVisible);
+   return()=>{active=false;clearTimeout(timer);controller?.abort();document.removeEventListener('visibilitychange',onVisible);window.removeEventListener('focus',onVisible);};
  },[handle,slug]);
  return <main className="shared-page"><header className="shared-nav"><a className="account-brand" href="/">pixel dex</a><a href="/login">My account</a></header>
  {loading?<p role="status">Loading…</p>:error?<p role="alert">{error}</p>:!profile&&!list?<section className="quiet-empty"><h1>Page unavailable</h1><p>This page may be private or no longer available.</p><a href="/login">Sign in</a></section>:list?<>

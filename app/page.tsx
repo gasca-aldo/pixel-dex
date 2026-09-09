@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useMemo, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Gamepad2,
   LogOut,
@@ -161,7 +161,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     </label>
   );
 }
-function Cover({
+const Cover = memo(function Cover({
   item,
   small = false,
 }: {
@@ -179,6 +179,7 @@ function Cover({
           src={src}
           alt={`${item.title} cover`}
           loading="lazy"
+          decoding="async"
           onError={() => setFailed(true)}
         />
       ) : (
@@ -197,7 +198,9 @@ function Cover({
       )}
     </div>
   );
-}
+}, (before, after) => before.small === after.small &&
+  before.item.kind === after.item.kind && before.item.title === after.item.title &&
+  before.item.catalogId === after.item.catalogId);
 function RailButton({
   label,
   children,
@@ -490,8 +493,8 @@ export default function Home() {
     setLauncher('All launchers');
   }
   const selected = data.items.find((i) => i.id === detail);
-  const sectionItems = data.items.filter((i) => inSection(i, section));
-  const visible = filteredItems(
+  const sectionItems = useMemo(() => data.items.filter((i) => inSection(i, section)), [data.items, section]);
+  const visible = useMemo(() => filteredItems(
     data.items,
     section,
     query,
@@ -499,8 +502,8 @@ export default function Home() {
     platform,
     launcher,
     sort,
-  );
-  const games = data.items.filter((i) => i.kind === 'game' && i.owned);
+  ), [data.items, section, query, tab, platform, launcher, sort]);
+  const games = useMemo(() => data.items.filter((i) => i.kind === 'game' && i.owned), [data.items]);
   const completed = games.filter((i) => i.status === 'Completed').length;
   const visibility = collectionAccess(data);
   const displayTab = (key: string) =>
