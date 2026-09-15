@@ -1,16 +1,16 @@
 export const releaseRegions=['North America','Europe','Japan','Worldwide / earliest available'] as const;
 export type ReleaseRegion=typeof releaseRegions[number];
-export type ReleaseCatalog={checkedAt:number;platforms:{id:number;name:string}[];dates:{platform?:number;region:string;date:string;year:string;format:string;status:string}[]};
+export type ReleaseCatalog={checkedAt:number;platforms:{id:number;name:string}[];dates:{platform?:number;month?:number;region:string;date:string;year:string;format:string;status:string}[]};
 type ReleaseItem={platform:string;releaseDate:string;releaseStatus?:'date'|'year'|'tba'|'released';releaseSource?:'catalog'|'manual';releaseRegion?:ReleaseRegion;releaseCatalog?:ReleaseCatalog};
 const validDate=(s:string)=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s+'T00:00:00Z'))&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;
 const key=(s:string)=>s.toLowerCase().replace(/[^a-z]/g,'');
 export function validReleaseCatalog(value:unknown):value is ReleaseCatalog {
  if(!value||typeof value!=='object')return false;
  const v=value as ReleaseCatalog;
- return Number.isFinite(v.checkedAt)&&v.checkedAt>0&&Array.isArray(v.platforms)&&v.platforms.length<=200&&v.platforms.every(p=>p&&Number.isSafeInteger(p.id)&&typeof p.name==='string'&&p.name.length<200)&&Array.isArray(v.dates)&&v.dates.length<=1000&&v.dates.every(d=>d&&(d.platform===undefined||Number.isSafeInteger(d.platform))&&['region','date','year','format','status'].every(k=>typeof d[k as keyof typeof d]==='string')&&(!d.date||validDate(d.date))&&(!d.year||/^\d{4}$/.test(d.year)));
+ return Number.isFinite(v.checkedAt)&&v.checkedAt>0&&Array.isArray(v.platforms)&&v.platforms.length<=200&&v.platforms.every(p=>p&&Number.isSafeInteger(p.id)&&typeof p.name==='string'&&p.name.length<200)&&Array.isArray(v.dates)&&v.dates.length<=1000&&v.dates.every(d=>d&&(d.platform===undefined||Number.isSafeInteger(d.platform))&&(d.month===undefined||(Number.isInteger(d.month)&&d.month>=1&&d.month<=12))&&['region','date','year','format','status'].every(k=>typeof d[k as keyof typeof d]==='string')&&(!d.date||validDate(d.date))&&(!d.year||/^\d{4}$/.test(d.year)));
 }
-export function applyCatalogRelease<T extends ReleaseItem>(item:T):T {
- if(item.releaseSource!=='catalog'||!item.releaseCatalog)return item;
+export function selectedCatalogRelease(item:ReleaseItem) {
+ if(item.releaseSource!=='catalog'||!item.releaseCatalog)return undefined;
  const catalog=item.releaseCatalog;
  const platform=catalog.platforms.find(p=>p.name===item.platform);
  let dates=catalog.dates.filter(d=>platform?d.platform===platform.id:!catalog.platforms.length&&d.platform===undefined);
@@ -20,10 +20,29 @@ export function applyCatalogRelease<T extends ReleaseItem>(item:T):T {
   const local=dates.filter(d=>key(d.region)===key(region));
   dates=local.length?local:dates.filter(d=>key(d.region)==='worldwide');
  }
- // Prefer a full release over early access, beta, or cancelled records.
- dates=dates.filter(d=>!/(earlyaccess|alpha|beta|cancel|delist)/.test(key(d.status)));
  dates.sort((a,b)=>(a.date||a.year||'9999').localeCompare(b.date||b.year||'9999'));
- const first=dates[0];
+ return dates[0];
+}
+// Keep partial dates in catalog metadata; never turn a provider's placeholder day into a confirmed day.
+export function catalogReleaseWindow(item:ReleaseItem):{kind:'month'|'quarter';key:string;label:string;end:string}|undefined {
+ const selected=selectedCatalogRelease(item);
+ if(!selected||!/^\d{4}$/.test(selected.year))return;
+ const format=selected.format.toUpperCase().replace(/[^A-Z0-9]/g,'');
+ const quarter=/^YYYYQ([1-4])$/.exec(format);
+ if(quarter){
+  const q=Number(quarter[1]);
+  return {kind:'quarter',key:`${selected.year}-Q${q}`,label:`Q${q} ${selected.year}`,end:`${selected.year}-${String(q*3).padStart(2,'0')}-${q===1||q===4?'31':'30'}`};
+ }
+ const monthNumber=selected.month??(validDate(selected.date)&&selected.date.startsWith(selected.year+'-')?Number(selected.date.slice(5,7)):0);
+ if(['YYYYMMMM','YYYYMM'].includes(format)&&Number.isInteger(monthNumber)&&monthNumber>=1&&monthNumber<=12){
+  const month=selected.year+'-'+String(monthNumber).padStart(2,'0');
+  const end=new Date(month+'-01T12:00:00Z');end.setUTCMonth(end.getUTCMonth()+1);end.setUTCDate(0);
+  return {kind:'month',key:month,label:new Date(month+'-01T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'}),end:end.toISOString().slice(0,10)};
+ }
+}
+export function applyCatalogRelease<T extends ReleaseItem>(item:T):T {
+ if(item.releaseSource!=='catalog'||!item.releaseCatalog)return item;
+ const first=selectedCatalogRelease(item);
  const year=first && !['TBD','TBA'].includes(first.format.toUpperCase()) ? first.year : '';
  const exact=first&&['YYYYMMMMDD','YYYYMMDD'].includes(first.format.toUpperCase().replace(/[^A-Z]/g,''))&&validDate(first.date);
  return {...item,releaseDate:exact?first!.date:year,releaseStatus:exact?'date':year?'year':'tba'};

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {applyCatalogRelease,validReleaseCatalog,fetchReleaseCatalog} from '../lib/catalog-releases.ts';
+import {applyCatalogRelease,catalogReleaseWindow,validReleaseCatalog,fetchReleaseCatalog} from '../lib/catalog-releases.ts';
 import {mapGame,releaseCatalogFor} from '../lib/igdb-map.ts';
 import {makeItem,validCollection,seedCollection} from '../lib/tracker.ts';
 const raw={id:90,name:'Example',platforms:[{id:6,name:'PC (Microsoft Windows)'},{id:167,name:'PlayStation 5'}],release_dates:[
@@ -8,6 +8,13 @@ const raw={id:90,name:'Example',platforms:[{id:6,name:'PC (Microsoft Windows)'},
  {platform:167,date:1924992000,y:2031,date_format:{format:'YYYY-MM-DD'},release_region:{region:'North America'}},
  {platform:6,date:1956528000,y:2032,date_format:{format:'YYYY-MM-DD'},release_region:{region:'Japan'}},
 ]};
+test('explicit month metadata works without a placeholder day and validates imported months',()=>{
+ const entry=mapGame({...raw,release_dates:[{platform:6,m:2,y:2028,date_format:{format:'YYYYMMMM'}}]});
+ assert.deepEqual(catalogReleaseWindow(entry),{kind:'month',key:'2028-02',label:'February 2028',end:'2028-02-29'});
+ assert.equal(validReleaseCatalog(entry.releaseCatalog),true);
+ const bad={...entry.releaseCatalog,dates:[{...entry.releaseCatalog.dates[0],month:13}]};
+ assert.equal(validReleaseCatalog(bad),false);
+});
 test('platform and region changes recalculate dates without changing ownership or notes',()=>{
  const entry=mapGame(raw),item={...makeItem('game',entry.title,false,entry),notes:'keep me'};
  assert.equal(item.releaseDate,'2030-01-01');

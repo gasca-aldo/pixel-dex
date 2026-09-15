@@ -1,4 +1,5 @@
 import type { Item } from './tracker';
+import {catalogReleaseWindow} from './catalog-releases.ts';
 export type ReleaseStatus = 'date' | 'year' | 'tba' | 'released';
 export function isReleaseDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -18,6 +19,8 @@ export function releaseStatus(item: Item): ReleaseStatus {
   return item.catalogId ? 'released' : 'tba';
 }
 export function releaseLabel(item: Item) {
+  const window=catalogReleaseWindow(item);
+  if(window)return `${window.label} · ${window.kind==='month'?'Day':'Date'} TBA`;
   const status = releaseStatus(item);
   return status === 'released'
     ? 'Released'
@@ -89,7 +92,12 @@ export function upcomingSections(items: Item[], today = todayKey()) {
     entries.push(item);
     months.set(month, entries);
   }
-  for (const [month, entries] of months) {
+  const partials=groups.years.filter(i=>catalogReleaseWindow(i));
+  for(const item of partials){
+    const window=catalogReleaseWindow(item)!;
+    if(window.kind==='month'&&window.end>=today)months.set(window.key,[...(months.get(window.key)||[]),item]);
+  }
+  for (const [month, entries] of [...months].sort(([a],[b])=>a.localeCompare(b))) {
     const date = new Date(`${month}-01T12:00:00`);
     const title = date.toLocaleDateString('en-US', {
       month: 'long',
@@ -99,8 +107,15 @@ export function upcomingSections(items: Item[], today = todayKey()) {
     });
     sections.push({ key: month, title, dated: true, items: entries });
   }
+  const quarters=new Map<string,Item[]>();
+  for(const item of partials){
+    const window=catalogReleaseWindow(item)!;
+    if(window.kind==='quarter'&&window.end>=today)quarters.set(window.key,[...(quarters.get(window.key)||[]),item]);
+  }
+  for(const [key,entries] of [...quarters].sort(([a],[b])=>a.localeCompare(b)))sections.push({key,title:catalogReleaseWindow(entries[0])!.label,dated:false,items:entries});
   const years = new Map<string, Item[]>();
   for (const item of groups.years) {
+    if(catalogReleaseWindow(item))continue;
     const entries = years.get(item.releaseDate) || [];
     entries.push(item);
     years.set(item.releaseDate, entries);

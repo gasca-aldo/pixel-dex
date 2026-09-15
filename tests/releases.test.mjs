@@ -8,11 +8,28 @@ import {
   releaseStatus,
   isReleaseDate,
   daysUntil,
+  releaseLabel,
 } from '../lib/releases.ts';
+import {applyCatalogRelease} from '../lib/catalog-releases.ts';
 const wish = (title, status, date, kind = 'game') => ({
   ...makeItem(kind, title, false),
   releaseStatus: status,
   releaseDate: date,
+});
+const partial=(title,format,date,year='2027')=>applyCatalogRelease({...wish(title,'year',year),platform:'PC',releaseSource:'catalog',releaseCatalog:{checkedAt:1,platforms:[{id:6,name:'PC'}],dates:[{platform:6,region:'Worldwide',date,year,format,status:''}]}});
+test('month and quarter labels retain precision through storage without creating day-specific reminders',()=>{
+ const month=partial('Month','YYYYMMMM','2027-02-01');
+ const quarter=partial('Quarter','YYYYQ2','2027-04-01');
+ assert.equal(releaseLabel(JSON.parse(JSON.stringify(month))),'February 2027 · Day TBA');
+ assert.equal(releaseLabel(quarter),'Q2 2027 · Date TBA');
+ assert.deepEqual(nextThirtyDays([month,quarter],'2027-02-01'),[]);
+ assert.ok(validCollection({...seedCollection(),items:[month,quarter]}));
+ assert.equal(releaseLabel({...month,releaseSource:'manual'}),'2027 · Date TBA');
+});
+test('partial months join the correct chronological month and quarters follow months before year and TBA',()=>{
+ const items=[partial('Month','YYYYMMMM','2027-02-01'),wish('Exact','date','2027-02-20'),partial('Quarter','YYYYQ2','2027-04-01'),partial('Old quarter','YYYYQ1','2026-01-01','2026'),wish('Year','year','2027'),wish('TBA','tba','')];
+ assert.deepEqual(upcomingSections(items,'2027-02-15').map(s=>[s.title,s.items.map(i=>i.title)]),[['February',['Exact','Month']],['Q2 2027',['Quarter']],['2027 · Date TBA',['Year']],['To be announced',['TBA']]]);
+ assert.deepEqual(upcomingSections([partial('Past month','YYYYMMMM','2027-01-01'),partial('Past quarter','YYYYQ1','2027-01-01')],'2027-04-01'),[]);
 });
 test('upcoming sorts exact dates before year-only and TBA while excluding past and owned entries', () => {
   const items = [

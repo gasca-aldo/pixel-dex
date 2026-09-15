@@ -7,6 +7,8 @@ This checklist distinguishes implemented safeguards from validation still needed
 
 ## 1. Release dates
 
+September 15 validation: postponements, TBA changes, platform/region selection, manual-date preservation, refresh failures and invalidated account/snapshot results pass deterministic tests. Month/quarter labels and Upcoming grouping are implemented; the actual editor and Upcoming components passed local mobile-width checks at 390px/320px. All 92 automated tests and TypeScript pass. See RELEASE-VALIDATION.md for evidence and remaining physical-device/live-provider validation limits. The historical year-only display limitation below is superseded.
+
 Implemented first release-date milestone: linked games retain IGDB platform/region metadata. Catalog dates recalculate on platform/region changes. Existing entries remain manual until opted in; new IGDB entries use catalog dates. Opening the library refreshes up to 20 stale opted-in wishlist entries, oldest first. Settings provides manual batch refresh; provider results are cached for one hour. Errors retain saved dates and concurrent library/account changes cancel applying the refresh. Month/quarter metadata is retained, but the current display still shows its known year.
 
 - Preserve available platforms, release precision, region, and source timestamps.

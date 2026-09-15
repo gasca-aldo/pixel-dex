@@ -1,14 +1,14 @@
 import {applyCatalogRelease,type ReleaseCatalog} from './catalog-releases.ts';
-export type RawGame = {id:number;name:string;collections?:number[];remakes?:number[];remasters?:number[];ports?:number[];first_release_date?:number;game_type?:{type:string};keywords?:{name:string}[];cover?:{image_id:string};platforms?:{id?:number;name:string}[];release_dates?:{platform?:number;date?:number;date_format?:{format:string};y?:number;release_region?:{region:string};status?:{name:string}}[]};
+export type RawGame = {id:number;name:string;collections?:number[];remakes?:number[];remasters?:number[];ports?:number[];first_release_date?:number;game_type?:{type:string};keywords?:{name:string}[];cover?:{image_id:string};platforms?:{id?:number;name:string}[];release_dates?:{platform?:number;m?:number;date?:number;date_format?:{format:string};y?:number;release_region?:{region:string};status?:{name:string}}[]};
 export function releaseCatalogFor(game:RawGame):ReleaseCatalog {
- return {checkedAt:Date.now(),platforms:(game.platforms??[]).filter(p=>Number.isSafeInteger(p.id)).map(p=>({id:p.id!,name:p.name==='PC (Microsoft Windows)'?'PC':p.name})),dates:(game.release_dates??[]).map(d=>({platform:d.platform,region:d.release_region?.region??'',date:d.date&&Number.isFinite(d.date)&&Math.abs(d.date)<253402300800?new Date(d.date*1000).toISOString().slice(0,10):'',year:d.y&&d.y>=1900&&d.y<=9999?String(d.y):'',format:d.date_format?.format??'',status:d.status?.name??''}))};
+ return {checkedAt:Date.now(),platforms:(game.platforms??[]).filter(p=>Number.isSafeInteger(p.id)).map(p=>({id:p.id!,name:p.name==='PC (Microsoft Windows)'?'PC':p.name})),dates:(game.release_dates??[]).map(d=>({platform:d.platform,...(Number.isInteger(d.m)&&d.m!>=1&&d.m!<=12?{month:d.m}:{}),region:d.release_region?.region??'',date:d.date&&Number.isFinite(d.date)&&Math.abs(d.date)<253402300800?new Date(d.date*1000).toISOString().slice(0,10):'',year:d.y&&d.y>=1900&&d.y<=9999?String(d.y):'',format:d.date_format?.format??'',status:d.status?.name??''}))};
 }
 export function mapGame(game:RawGame) {
  const platform=game.platforms?.find(p=>p.name==='PC (Microsoft Windows)')??game.platforms?.[0];
  const releaseCatalog=releaseCatalogFor(game);
  return applyCatalogRelease({id:`igdb:${game.id}`,title:game.name,kind:'game' as const,platform:platform?.name==='PC (Microsoft Windows)'?'PC':platform?.name??'',subtitle:game.platforms?.map(p=>p.name).join(' · ')||'IGDB',releaseDate:'',releaseStatus:'tba' as 'date'|'year'|'tba',releaseSource:'catalog' as const,releaseRegion:'Worldwide / earliest available' as const,releaseCatalog});
 }
-export const gameFields='name,collections,remakes,remasters,ports,first_release_date,game_type.type,keywords.name,cover.image_id,platforms.id,platforms.name,release_dates.release_region.region,release_dates.status.name,release_dates.platform,release_dates.date,release_dates.date_format.format,release_dates.y';
+export const gameFields='name,collections,remakes,remasters,ports,first_release_date,game_type.type,keywords.name,cover.image_id,platforms.id,platforms.name,release_dates.release_region.region,release_dates.status.name,release_dates.platform,release_dates.date,release_dates.date_format.format,release_dates.y,release_dates.m';
 export function searchBody(query:string) {
  return `search ${JSON.stringify(query)}; fields ${gameFields}; limit 50;`;
 }

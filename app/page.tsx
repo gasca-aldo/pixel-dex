@@ -1,5 +1,6 @@
 'use client';
 import {applyCatalogRelease,fetchReleaseCatalog,releaseRegions,type ReleaseRegion} from '@/lib/catalog-releases';
+import {refreshReleaseBatch} from '@/lib/release-refresh';
 import {hardwarePhotoFor,variantFor,variantsFor,selectHardwareVariant} from '@/lib/hardware-variants';
 import {hardwareCategories,hardwareCategory,hardwareCatalog,type HardwareCategory} from '@/lib/hardware-catalog';
 import {useGameSearch} from '@/hooks/use-game-search';
@@ -503,20 +504,15 @@ export default function Home() {
   const autoReleaseOwner=useRef<string|null>(null);
   async function refreshReleases(automatic=false) {
     if(!ready||saving.current||storageError||releaseRefreshInFlight.current)return;
-    const snapshot=dataRef.current,id=owner.current;
-    const targets=snapshot.items.filter(i=>!i.owned&&i.kind==='game'&&i.releaseSource==='catalog'&&i.catalogId?.startsWith('igdb:')&&(!automatic||!i.releaseCatalog||Date.now()-i.releaseCatalog.checkedAt>86400000)).sort((a,b)=>(a.releaseCatalog?.checkedAt??0)-(b.releaseCatalog?.checkedAt??0)).slice(0,20);
-    if(!targets.length){if(!automatic)setNotice('No catalog dates need refreshing. Open a game and choose IGDB dates to enable updates.');return;}
+    const snapshot=dataRef.current,id=owner.current,epoch=libraryEpoch.current;
+    const current=()=>owner.current===id&&libraryEpoch.current===epoch&&dataRef.current===snapshot&&!signingOut.current;
     releaseRefreshInFlight.current=true;setRefreshingReleases(true);
-    const refreshed=new Map<string,Item['releaseCatalog']>();let failed=0;
     try {
-      for(const target of targets){
-        if(owner.current!==id||dataRef.current!==snapshot||signingOut.current)break;
-        try{if(!refreshed.has(target.catalogId!))refreshed.set(target.catalogId!,await fetchReleaseCatalog(target.catalogId!));}catch{failed++;if(failed>=3)break;}
-      }
-      if(owner.current!==id||dataRef.current!==snapshot||signingOut.current){if(!automatic)setNotice('Your library changed during refresh. Please try again.');return;}
-      const items=snapshot.items.map(i=>targets.includes(i)&&refreshed.has(i.catalogId!)?applyCatalogRelease({...i,releaseCatalog:refreshed.get(i.catalogId!)}):i);
-      if(refreshed.size&&commit({...snapshot,items}))setNotice(failed?'Some dates refreshed. Unavailable dates were kept; retry later.':'Release dates refreshed for this batch. Refresh again for more wishlist games.');
-      else if(!refreshed.size&&!automatic)setNotice('Unable to refresh dates. Your saved dates have been kept.');
+      const result=await refreshReleaseBatch(snapshot.items,current,automatic);
+      if(result.cancelled||!current())return;
+      if(!result.targets){if(!automatic)setNotice('No catalog dates need refreshing. Open a game and choose IGDB dates to enable updates.');return;}
+      if(result.updated&&commit({...snapshot,items:result.items}))setNotice(result.failed?'Some dates refreshed. Unavailable dates were kept; retry later.':'Release dates refreshed for this batch. Refresh again for more wishlist games.');
+      else if(!result.updated&&!automatic)setNotice('Unable to refresh dates. Your saved dates have been kept.');
     }finally{releaseRefreshInFlight.current=false;setRefreshingReleases(false);}
   }
   useEffect(()=>{
@@ -1958,6 +1954,7 @@ function Editor({
                   <Field label="Release region"><Picker label="Release region" value={form.releaseRegion??'Worldwide / earliest available'} options={[...releaseRegions]} onChange={v=>setForm(f=>applyCatalogRelease({...f,releaseRegion:v as ReleaseRegion}))}/></Field>
                   <p className="muted" role="status">{releaseLoading?'Checking release dates…':releaseError|| (form.releaseCatalog?'Last checked '+new Date(form.releaseCatalog.checkedAt).toLocaleString():'No catalog dates loaded yet.')}{form.releaseSource==='catalog'?' Uses the selected platform. Regional selections fall back to a worldwide date; earliest available compares all regions. No matching release is shown as TBA.':''}</p>
                 </>}
+                {form.releaseSource==='catalog' ? <Field label="Catalog release"><p role="status">{releaseLabel(form)}</p></Field> : <>
                 <Field label="Release timing">
                   <Picker
                     label="Release timing"
@@ -2022,6 +2019,7 @@ function Editor({
                     />
                   </Field>
                 )}
+                </>}
               </>
             )}
           </div>
