@@ -10,5 +10,5 @@ export function AccountStatus() {
     const {data} = auth.onAuthStateChange((_event, session) => setEmail(session?.user.email));
     return () => { active = false; data.subscription.unsubscribe(); };
   }, []);
-  return <div className="settings-section"><h3>Account</h3><p>{email || 'Sign in with Google or email.'}</p><a className="secondary" href="/login">{email ? 'Manage account' : 'Sign in'}</a><p>Signed-in libraries save to your account. The local library stays separate.</p></div>;
+  return <div className="settings-section"><h3>Account</h3><p>{email || 'Sign in with Google or email.'}</p><a className="secondary" href="/login">{email ? 'Manage account' : 'Sign in'}</a><p><a href="/privacy">Privacy notice</a>{email && <> · <a href="/account/delete">Delete account</a></>}</p><p>Signed-in libraries save to your account. The local library stays separate.</p></div>;
 }

@@ -33,3 +33,13 @@ export const covers: Record<string, string> = {
   '1057090':
     'https://cdn.akamai.steamstatic.com/steam/apps/1057090/library_600x900.jpg',
 };
+
+export function coverFor(id?:string) {
+ if(!id)return undefined;
+ return /^igdb:[1-9]\d{0,9}$/.test(id)?'/api/catalog/cover/'+id.slice(5):covers[id];
+}
+
+export function coverSrcSet(id?:string) {
+ const src=coverFor(id);
+ return id?.startsWith('igdb:')&&src?`${src}?dpr=2 2x`:undefined;
+}

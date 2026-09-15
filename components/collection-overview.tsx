@@ -102,8 +102,8 @@ export function CollectionOverview({
             [Library, games.length, 'Games owned', 'games', 'All'],
             [
               Gamepad2,
-              items.filter((i) => i.owned && i.kind === 'console').length,
-              'Consoles owned',
+              items.filter((i) => i.owned && i.kind !== 'game').length,
+              'Hardware owned',
               'consoles',
               'All',
             ],

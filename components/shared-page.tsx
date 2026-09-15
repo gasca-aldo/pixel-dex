@@ -1,15 +1,15 @@
  'use client';
 import {useEffect,useState} from 'react';
 import {getSupabase} from '@/lib/supabase';
-import {covers} from '@/lib/covers';
+import {coverFor,coverSrcSet} from '@/lib/covers';
 import {ListReadView} from '@/components/game-lists';
 import {type GameRef,type GameList} from '@/lib/tracker';
 import {Gamepad2,UserRound} from 'lucide-react';
 type SharedList=GameList & {slug:string};
 type Profile={handle:string;name:string;bio:string;topGames:GameRef[];lists:SharedList[];collection:({id:string;title:string;kind:string;owned:boolean;platform:string;catalogId?:string}[])|null};
 function Art({game}:{game:GameRef}) {
- const [broken,setBroken]=useState(false); const url=game.catalogId?covers[game.catalogId]:undefined;
- return <div className="shared-cover">{url&&!broken?<img src={url} alt={game.title} loading="lazy" decoding="async" onError={()=>setBroken(true)}/>:<Gamepad2 aria-label={game.title}/>}</div>;
+ const [broken,setBroken]=useState(false); const url=coverFor(game.catalogId);
+ return <div className="shared-cover">{url&&!broken?<img src={url} srcSet={coverSrcSet(game.catalogId)} alt={game.title} loading="lazy" decoding="async" onError={()=>setBroken(true)}/>:<Gamepad2 aria-label={game.title}/>}</div>;
 }
 export function SharedPage({handle,slug}:{handle:string;slug?:string}) {
  const [profile,setProfile]=useState<Profile|null>(null);const [list,setList]=useState<SharedList|null>(null);

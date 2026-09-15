@@ -1,7 +1,12 @@
+import {createHealthCheck,observeService} from './lib/service-health';
+const healthCheck = createHealthCheck();
+import {deleteAccount} from './lib/delete-account';
 import app from 'vinext/server/fetch-handler';
 import {DurableObject} from 'cloudflare:workers';
 import {consumeAttempt, WINDOW_MS} from './lib/login-window.mjs';
-type Env={LOGIN_LIMITER:DurableObjectNamespace};
+import {catalogRequest,type CatalogEnv} from './lib/igdb-server';
+export {GameCatalog} from './lib/igdb-server';
+type Env=CatalogEnv & {SUPABASE_SECRET_KEY?:string;LOGIN_LIMITER:DurableObjectNamespace};
 export class LoginLimiter extends DurableObject<Env> {
  async fetch() {
    return this.ctx.blockConcurrencyWhile(async()=>{
@@ -14,9 +19,11 @@ export class LoginLimiter extends DurableObject<Env> {
  async alarm(){await this.ctx.storage.deleteAll();}
 }
 const json=(value:unknown,status=200,extra:Record<string,string>={})=>Response.json(value,{status,headers:{'Cache-Control':'no-store',...extra}});
-export default {
- async fetch(request:Request,env:Env,ctx:ExecutionContext) {
+async function handleRequest(request:Request,env:Env,ctx:ExecutionContext) {
    const url=new URL(request.url);
+   if(url.pathname==='/api/health')return healthCheck(request,{url:process.env.NEXT_PUBLIC_SUPABASE_URL,key:process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY});
+   if(url.pathname==='/api/account')return deleteAccount(request,{url:process.env.NEXT_PUBLIC_SUPABASE_URL!,secret:env.SUPABASE_SECRET_KEY});
+   if(url.pathname.startsWith('/api/catalog'))return catalogRequest(request,env);
    if(url.pathname!=='/api/login')return app.fetch(request,env,ctx);
    if(request.method!=='POST')return json({error:'Method not allowed'},405,{Allow:'POST'});
    if(request.headers.get('origin')!==url.origin)return json({error:'Invalid origin'},403);
@@ -42,5 +49,5 @@ export default {
      if(!result.access_token||!result.refresh_token)return json({error:'Unable to complete sign-in'},502);
      return json({access_token:result.access_token,refresh_token:result.refresh_token});
    } catch {return json({error:'Unable to connect. Please try again.'},503);}
- }
-};
+}
+export default {fetch(request:Request,env:Env,ctx:ExecutionContext){return observeService(request,()=>handleRequest(request,env,ctx));}};

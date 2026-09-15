@@ -62,5 +62,13 @@ test('Supabase sharing enforces owner, public, unlisted and private boundaries',
   await as('authenticated',owner);library.lists=[];await db.query('select public.save_account_library($1,2,$2)',[library,owner]);
   await as('anon');assert.equal(await list('unlisted'),null);
  });
+ await t.test('deleting an auth user removes linked data and old links, preserves other accounts, and blocks stale-token writes',async()=>{
+  await db.exec('reset role');
+  await db.query('delete from auth.users where id=$1',[owner]);
+  for(const table of ['account_libraries','profile_handles','list_addresses'])assert.equal((await db.query('select * from public.'+table+' where user_id=$1',[owner])).rows.length,0);
+  assert.equal((await db.query('select * from public.account_libraries where user_id=$1',[stranger])).rows.length,1);
+  await as('anon');assert.equal(await profile(),null);assert.equal(await list('unlisted'),null);
+  await as('authenticated',owner);await assert.rejects(db.query('select public.save_account_library($1,0,$2)',[library,owner]));
+ });
  } finally {await db.close();}
 });

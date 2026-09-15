@@ -275,8 +275,8 @@ h1 {
   white-space: nowrap;
 }
 .primary {
-  background: #9562ee;
-  border-color: #9562ee;
+  background: #7140d9;
+  border-color: #7140d9;
   color: #fff;
 }
 .secondary {
@@ -2644,3 +2644,36 @@ h1 {
 
 .signed-in-email {font-size:12px;color:var(--muted-foreground);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 @media(max-width:700px){.signed-in-email {max-width:100px;}}
+
+.hardware-sections {display:flex;flex-wrap:wrap;gap:8px;margin:20px 0;}
+.hardware-sections button {display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--muted-foreground);font-size:13px;}
+.hardware-sections button.selected {background:var(--purple-soft);border-color:var(--primary);color:var(--primary);}
+.hardware-sections button span {font-size:12px;opacity:.8;}
+.hardware-sections button:focus-visible {outline:2px solid var(--primary);outline-offset:2px;}
+
+/* Keep the whole device visible, including wide consoles and controllers. */
+.art.hardware-art img { object-fit:contain; padding:12px; background:#f6f6f8; }
+.small-art.hardware-art img { padding:3px; }
+.hardware-variant-editor { margin:16px 0; }
+.hardware-variant-preview { display:flex; align-items:center; gap:16px; margin-top:12px; }
+.hardware-variant-preview .art { width:140px; height:110px; flex-shrink:0; border-radius:12px; }
+.hardware-variant-preview p,.hardware-variant-preview a,.hardware-credit { font-size:12px; color:var(--muted-foreground); }
+.hardware-variant-preview a,.hardware-credit { text-decoration:underline; }
+
+.privacy-page { max-width:760px; margin:40px auto; padding:24px; line-height:1.7; }.privacy-page h2 { font-size:1.2rem; margin-top:28px; }.privacy-page a { text-decoration:underline; }.privacy-page h1 { font-size:2rem; }
+
+/* Keep account actions inside the available width beside the icon rail. */
+.topbar-actions { min-width: 0; flex-shrink: 1; }
+@media (max-width: 767px) {
+  .topbar .private { display: none; }
+}
+@media (max-width: 480px) {
+  .topbar .signed-in-email { display: none; }
+  .topbar > span { flex: 1; }
+}
+
+@media (max-width: 767px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat { min-width: 0; }
+  .stat span { grid-column: 1 / -1; }
+}

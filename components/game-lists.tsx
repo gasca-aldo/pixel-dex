@@ -1,4 +1,5 @@
 'use client';
+import {useGameSearch} from '@/hooks/use-game-search';
 import { ProfileAddress, ShareLink } from '@/components/sharing-controls';
 import { useState, type ReactNode } from 'react';
 import {
@@ -42,7 +43,7 @@ import {
   addListGame,
   moveListGame,
   newGameList,
-  gameChoices,
+  gameReference,
   getProfile,
   collectionAccess,
   publicProfile,
@@ -128,15 +129,16 @@ function GamePicker({
   renderArt: RenderArt;
 }) {
   const [query, setQuery] = useState('');
-  const choices = gameChoices(items).filter((g) =>
-    g.title.toLowerCase().includes(query.toLowerCase()),
-  );
+  const search=useGameSearch(query);
+  const local=items.filter(i=>i.kind==='game').map(gameReference).filter(g=>g.title.toLowerCase().includes(query.toLowerCase()));
+  const remote=search.results.map(g=>({id:`catalog:${g.id}`,catalogId:g.id,title:g.title}));
+  const choices=[...local,...remote.filter(g=>!local.some(l=>l.id===g.id))];
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="catalog-dialog">
         <DialogTitle>Choose a game</DialogTitle>
         <DialogDescription>
-          Choose from the sample catalog or add a custom title. Ownership isn’t
+          Search IGDB or add a custom title. Ownership isn’t
           required.
         </DialogDescription>
         <label className="search-box">
@@ -149,6 +151,7 @@ function GamePicker({
             placeholder="Search games…"
           />
         </label>
+        <p className="muted" role="status">{search.loading?'Searching IGDB…':search.error || 'Games provided by IGDB'}</p>
         <div className="catalog-results">
           {choices.map((game) => (
             <button

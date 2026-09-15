@@ -15,9 +15,11 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
 const localBindingConfig = {
   name: 'pixel-dex',
   workers_dev: true,
+  keep_vars: true,
+  observability: {enabled:true,logs:{enabled:true,head_sampling_rate:1,invocation_logs:false},traces:{enabled:false}},
   main: './worker.ts',
-  durable_objects: {bindings:[{name:'LOGIN_LIMITER',class_name:'LoginLimiter'}]},
-  migrations:[{tag:'login-limiter-v1',new_sqlite_classes:['LoginLimiter']}],
+  durable_objects: {bindings:[{name:'LOGIN_LIMITER',class_name:'LoginLimiter'},{name:'GAME_CATALOG',class_name:'GameCatalog'}]},
+  migrations:[{tag:'login-limiter-v1',new_sqlite_classes:['LoginLimiter']},{tag:'game-catalog-v1',new_sqlite_classes:['GameCatalog']}],
   compatibility_flags: ['nodejs_compat'],
   d1_databases: d1
     ? [

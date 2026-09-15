@@ -1,3 +1,6 @@
+import {validReleaseCatalog,releaseRegions,type ReleaseCatalog,type ReleaseRegion} from './catalog-releases.ts';
+import {variantsFor} from './hardware-variants.ts';
+import {hardwareCatalog,hardwareCategories,type HardwareCategory} from './hardware-catalog.ts';
 export type Kind = 'game' | 'console' | 'build';
 export type Status = 'Backlog' | 'Playing' | 'Paused' | 'Completed' | 'Dropped';
 export type Visibility = 'Private' | 'Unlisted' | 'Public';
@@ -6,6 +9,7 @@ export type Upgrade = { date: string; type: string; from: string; to: string };
 export type Item = {
   id: string;
   catalogId?: string;
+  hardwareCategory?: HardwareCategory;
   kind: Kind;
   title: string;
   owned: boolean;
@@ -16,6 +20,9 @@ export type Item = {
   rating: number;
   notes: string;
   priority: string;
+  releaseSource?: 'catalog' | 'manual';
+  releaseRegion?: ReleaseRegion;
+  releaseCatalog?: ReleaseCatalog;
   releaseDate: string;
   releaseStatus?: 'date' | 'year' | 'tba' | 'released';
   edition: string;
@@ -31,6 +38,13 @@ export type CatalogItem = {
   platform: string;
   subtitle: string;
   cover?: string;
+  hardwareCategory?: HardwareCategory;
+  edition?: string;
+  releaseSource?: 'catalog' | 'manual';
+  releaseRegion?: ReleaseRegion;
+  releaseCatalog?: ReleaseCatalog;
+  releaseDate?: string;
+  releaseStatus?: Item['releaseStatus'];
 };
 export type GameRef = { id: string; title: string; catalogId?: string };
 export type GameListEntry = { game: GameRef; note: string };
@@ -102,24 +116,7 @@ export const catalog: CatalogItem[] = [
   kind: 'game' as const,
   platform: 'PC',
 }));
-catalog.push(
-  ...[
-    ['switch-oled', 'Nintendo Switch OLED', 'Nintendo', 'Hybrid console'],
-    ['ps5', 'PlayStation 5', 'PlayStation', 'Home console'],
-    ['series-x', 'Xbox Series X', 'Xbox', 'Home console'],
-    ['steam-deck', 'Steam Deck OLED', 'PC', 'Handheld PC'],
-    ['switch-lite', 'Nintendo Switch Lite', 'Nintendo', 'Handheld console'],
-    ['ps2', 'PlayStation 2', 'PlayStation', 'Home console'],
-    ['gameboy', 'Game Boy Advance SP', 'Nintendo', 'Handheld console'],
-    ['series-s', 'Xbox Series S', 'Xbox', 'Home console'],
-  ].map(([id, title, platform, subtitle]) => ({
-    id,
-    title,
-    platform,
-    subtitle,
-    kind: 'console' as const,
-  })),
-);
+catalog.push(...hardwareCatalog);
 export function makeItem(
   kind: Kind,
   title: string,
@@ -128,20 +125,22 @@ export function makeItem(
 ): Item {
   return {
     id: globalThis.crypto.randomUUID(),
-    ...(entry ? { catalogId: entry.id } : {}),
+    ...(entry ? { catalogId: entry.id, ...(entry.hardwareCategory?{hardwareCategory:entry.hardwareCategory}:{}) } : {}),
     kind,
     title,
     owned,
     platform: entry?.platform || (kind === 'game' ? 'PC' : ''),
-    launcher: kind === 'game' ? 'Steam' : '',
+    launcher: kind === 'game' && !entry?.id.startsWith('igdb:') ? 'Steam' : '',
     format: 'Digital',
     status: 'Backlog',
     rating: 0,
     notes: '',
     priority: 'Medium',
-    releaseDate: '',
-    edition: 'Standard',
-    color: '',
+    releaseDate: entry?.releaseDate ?? '',
+    ...(entry?.releaseCatalog?{releaseCatalog:entry.releaseCatalog,releaseSource:entry.releaseSource,releaseRegion:entry.releaseRegion}:{}),
+    ...(entry?.releaseStatus ? {releaseStatus:entry.releaseStatus} : {}),
+    edition: variantsFor(entry?.id)[0]?.edition ?? entry?.edition ?? 'Standard',
+    color: variantsFor(entry?.id)[0]?.color ?? '',
     components: [],
     history: [],
     createdAt: Date.now(),
@@ -275,6 +274,10 @@ export function validCollection(value: unknown): value is Collection {
           'color',
         ].every((k) => typeof i[k as keyof Item] === 'string') &&
         (!i.catalogId || typeof i.catalogId === 'string') &&
+        (i.hardwareCategory===undefined || hardwareCategories.includes(i.hardwareCategory)) &&
+        (i.releaseSource===undefined||['catalog','manual'].includes(i.releaseSource)) &&
+        (i.releaseRegion===undefined||releaseRegions.includes(i.releaseRegion)) &&
+        (i.releaseCatalog===undefined||validReleaseCatalog(i.releaseCatalog)) &&
         (i.releaseStatus === undefined ||
           ['date', 'year', 'tba', 'released'].includes(i.releaseStatus)) &&
         statuses.includes(i.status) &&
@@ -302,6 +305,7 @@ export function validCollection(value: unknown): value is Collection {
   );
 }
 export function inSection(item: Item, section: string) {
+  if(section==='consoles')return item.owned && item.kind!=='game';
   if (section === 'gameWishlist') return !item.owned && item.kind === 'game';
   if (section === 'hardwareWishlist')
     return !item.owned && (item.kind === 'console' || item.kind === 'build');

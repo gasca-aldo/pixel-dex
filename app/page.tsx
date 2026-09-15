@@ -1,4 +1,8 @@
 'use client';
+import {applyCatalogRelease,fetchReleaseCatalog,releaseRegions,type ReleaseRegion} from '@/lib/catalog-releases';
+import {hardwarePhotoFor,variantFor,variantsFor,selectHardwareVariant} from '@/lib/hardware-variants';
+import {hardwareCategories,hardwareCategory,hardwareCatalog,type HardwareCategory} from '@/lib/hardware-catalog';
+import {useGameSearch} from '@/hooks/use-game-search';
 import { memo, useMemo, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Gamepad2,
@@ -96,9 +100,10 @@ import {
 } from '@/lib/tracker';
 import { getSupabase } from '@/lib/supabase';
 import { draftKey, loadLibrary, saveLibrary } from '@/lib/account-library';
+import { samePayload, clearMatchingDraft, settleSave } from '@/lib/library-recovery';
 import { Button } from '@/components/ui/button';
 import { AccountStatus } from '@/components/account-status';
-import { covers } from '@/lib/covers';
+import { coverFor, coverSrcSet } from '@/lib/covers';
 import {
   GameLists,
   PlayerPage,
@@ -122,7 +127,7 @@ const sectionLabels: Record<string, string> = {
   profile: 'Profile',
   upcoming: 'Upcoming',
   games: 'Games',
-  consoles: 'Consoles',
+  consoles: 'Hardware',
   builds: 'PC builds',
   gameWishlist: 'Game wishlist',
   hardwareWishlist: 'Hardware wishlist',
@@ -165,18 +170,22 @@ const Cover = memo(function Cover({
   item,
   small = false,
 }: {
-  item: Pick<Item, 'kind' | 'title' | 'catalogId'>;
+  item: Pick<Item, 'kind' | 'title' | 'catalogId'> & Partial<Pick<Item,'edition'|'color'>>;
   small?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
-  const src = item.catalogId ? covers[item.catalogId] : undefined;
+  const photo = item.kind==='console'?hardwarePhotoFor(item):undefined;
+  const src = item.kind==='game'?coverFor(item.catalogId):photo?.src;
+  useEffect(()=>setFailed(false),[src]);
   return (
     <div
-      className={`art ${small ? 'small-art' : ''} ${!src || failed ? 'cover-fallback' : ''}`}
+      title={photo?`Photo: ${photo.author} · ${photo.license}`:undefined}
+      className={`art ${item.kind==='console'?'hardware-art':''} ${small ? 'small-art' : ''} ${!src || failed ? 'cover-fallback' : ''}`}
     >
       {src && !failed ? (
         <img
           src={src}
+          srcSet={coverSrcSet(item.catalogId)}
           alt={`${item.title} cover`}
           loading="lazy"
           decoding="async"
@@ -200,7 +209,7 @@ const Cover = memo(function Cover({
   );
 }, (before, after) => before.small === after.small &&
   before.item.kind === after.item.kind && before.item.title === after.item.title &&
-  before.item.catalogId === after.item.catalogId);
+  before.item.catalogId === after.item.catalogId && before.item.edition === after.item.edition && before.item.color === after.item.color);
 function RailButton({
   label,
   children,
@@ -274,7 +283,6 @@ function Navigation({
           ['dashboard', House],
           ['games', Library],
           ['consoles', Gamepad2],
-          ['builds', Monitor],
           ['gameWishlist', Heart],
           ['hardwareWishlist', Cpu],
           ['upcoming', CalendarDays],
@@ -344,7 +352,11 @@ export default function Home() {
   const [draft, setDraft] = useState<Item | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState('');
+  const [hardwareFilter,setHardwareFilter]=useState('All hardware');
+  const [catalogCategory,setCatalogCategory]=useState('All hardware');
   const [addKind, setAddKind] = useState<Kind>('game');
+  const gameSearch=useGameSearch(catalogQuery,addOpen && addKind==='game');
+  const catalogResults=addKind==='game'?gameSearch.results:catalog.filter(i=>i.kind===addKind && `${i.title} ${i.subtitle} ${i.platform}`.toLowerCase().includes(catalogQuery.toLowerCase()) && (catalogCategory==='All hardware'||i.hardwareCategory===catalogCategory));
   const [settings, setSettings] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [notice, setNotice] = useState('');
@@ -354,9 +366,11 @@ export default function Home() {
     run: () => void;
   } | null>(null);
   const upload = useRef<HTMLInputElement>(null);
+  const addReturnFocus = useRef<HTMLElement | null>(null);
   const owner = useRef<string | null>(null);
   const revision = useRef(0);
   const saving = useRef(false);
+  const libraryEpoch = useRef(0);
   const [sync, setSync] = useState('Loading library…');
   const [account, setAccount] = useState(false);
   const [accountEmail, setAccountEmail] = useState('');
@@ -366,12 +380,13 @@ export default function Home() {
   const [hasDraft, setHasDraft] = useState(false);
   useEffect(() => {
     let active = true;
+    libraryEpoch.current += 1;
     let loaded = false;
     let invalidated = false;
     const auth = getSupabase().auth;
     const {data: listener} = auth.onAuthStateChange((_event, session) => {
       if(loaded && (session?.user.id ?? null) !== owner.current) {
-        invalidated=true; setReady(false);
+        invalidated=true; libraryEpoch.current += 1; setReady(false);
         dataRef.current={...seedCollection(),items:[],lists:[],profile:undefined};
         setData(dataRef.current);setDraft(null);setDetail(null);owner.current=null;
         window.location.replace(session?'/':'/login');
@@ -405,7 +420,7 @@ export default function Home() {
           if(pending) {
             const draft = JSON.parse(pending);
             if(!validCollection(draft.payload) || !Number.isInteger(draft.revision)) throw new Error('The saved browser draft is unreadable. It has been preserved.');
-            if(remote && JSON.stringify(remote.payload) === JSON.stringify(draft.payload)) localStorage.removeItem(draftKey(id));
+            if(remote && samePayload(remote.payload, draft.payload)) clearMatchingDraft(localStorage, draftKey(id), draft.payload, draft.revision);
             else {
               collection = draft.payload;
               revision.current = draft.revision;
@@ -415,7 +430,7 @@ export default function Home() {
           }
           dataRef.current = collection; setData(collection);
           setCanImport(!remote && !pending && !!localStorage.getItem(STORAGE));
-          setSync(pending ? 'Check unsaved changes' : remote ? 'Saved to your account' : 'Account library ready');
+          setSync(pending && !samePayload(remote?.payload, collection) ? 'Check unsaved changes' : remote ? 'Saved to your account' : 'Account library ready');
         }
         if(active && !invalidated) setReady(true);
       } catch(e) { if(active) {setStorageError(e instanceof Error ? e.message : 'Unable to load your library. Please reload.');setSync('Library unavailable');} }
@@ -425,20 +440,30 @@ export default function Home() {
     const restore=(event:PageTransitionEvent)=>{if(event.persisted){setReady(false);window.location.reload();}};
     window.addEventListener('pageshow',restore);
     window.addEventListener('beforeunload',preventLoss);
-    return () => {active=false; listener.subscription.unsubscribe();window.removeEventListener('beforeunload',preventLoss);window.removeEventListener('pageshow',restore);};
+    return () => {active=false; libraryEpoch.current += 1; listener.subscription.unsubscribe();window.removeEventListener('beforeunload',preventLoss);window.removeEventListener('pageshow',restore);};
   }, []);
   async function pushAccount(next: Collection) {
     const id = owner.current;
-    if(!id || saving.current) return;
+    if(!id || saving.current || signingOut.current) return;
+    const epoch = libraryEpoch.current;
+    const expectedRevision = revision.current;
+    const current = () => owner.current === id && libraryEpoch.current === epoch;
     saving.current = true; setSync('Saving…');
-    try {
-      revision.current = await saveLibrary(next, revision.current, id);
-      localStorage.removeItem(draftKey(id));
-      setHasDraft(false); setStorageError(''); setCanImport(false); setSync('Saved to your account');
-    } catch(e) {
-      setHasDraft(true); setSync('Not saved to account');
-      setStorageError(e instanceof Error ? e.message : 'Save failed. Your browser draft has been kept.');
-    } finally {saving.current=false;}
+    await settleSave(
+      () => saveLibrary(next, expectedRevision, id), current,
+      savedRevision => {
+        const cleared = clearMatchingDraft(localStorage, draftKey(id), next, expectedRevision);
+        revision.current = savedRevision;
+        setHasDraft(false); setCanImport(false);
+        setStorageError(cleared ? '' : 'Another tab has unsaved changes. Reload to review its recovery copy before editing.');
+        setSync('Saved to your account');
+      },
+      error => {
+        setHasDraft(true); setSync('Save not confirmed');
+        setStorageError(error instanceof Error ? error.message : 'Save failed. Your browser draft has been kept.');
+      },
+    );
+    if(current()) saving.current = false;
   }
   useEffect(() => {
     document.documentElement.classList.toggle('dark', data.theme === 'dark');
@@ -455,6 +480,10 @@ export default function Home() {
         return false;
       }
       if(owner.current) {
+        if(localStorage.getItem(draftKey(owner.current))) {
+          setStorageError('Another tab has a recovery copy. Reload to review it before editing.');
+          return false;
+        }
         localStorage.setItem(draftKey(owner.current), JSON.stringify({payload:next, revision:revision.current}));
         dataRef.current=next; setData(next); setHasDraft(true);
         void pushAccount(next);
@@ -469,6 +498,31 @@ export default function Home() {
       return false;
     }
   }
+  const [refreshingReleases,setRefreshingReleases]=useState(false);
+  const releaseRefreshInFlight=useRef(false);
+  const autoReleaseOwner=useRef<string|null>(null);
+  async function refreshReleases(automatic=false) {
+    if(!ready||saving.current||storageError||releaseRefreshInFlight.current)return;
+    const snapshot=dataRef.current,id=owner.current;
+    const targets=snapshot.items.filter(i=>!i.owned&&i.kind==='game'&&i.releaseSource==='catalog'&&i.catalogId?.startsWith('igdb:')&&(!automatic||!i.releaseCatalog||Date.now()-i.releaseCatalog.checkedAt>86400000)).sort((a,b)=>(a.releaseCatalog?.checkedAt??0)-(b.releaseCatalog?.checkedAt??0)).slice(0,20);
+    if(!targets.length){if(!automatic)setNotice('No catalog dates need refreshing. Open a game and choose IGDB dates to enable updates.');return;}
+    releaseRefreshInFlight.current=true;setRefreshingReleases(true);
+    const refreshed=new Map<string,Item['releaseCatalog']>();let failed=0;
+    try {
+      for(const target of targets){
+        if(owner.current!==id||dataRef.current!==snapshot||signingOut.current)break;
+        try{if(!refreshed.has(target.catalogId!))refreshed.set(target.catalogId!,await fetchReleaseCatalog(target.catalogId!));}catch{failed++;if(failed>=3)break;}
+      }
+      if(owner.current!==id||dataRef.current!==snapshot||signingOut.current){if(!automatic)setNotice('Your library changed during refresh. Please try again.');return;}
+      const items=snapshot.items.map(i=>targets.includes(i)&&refreshed.has(i.catalogId!)?applyCatalogRelease({...i,releaseCatalog:refreshed.get(i.catalogId!)}):i);
+      if(refreshed.size&&commit({...snapshot,items}))setNotice(failed?'Some dates refreshed. Unavailable dates were kept; retry later.':'Release dates refreshed for this batch. Refresh again for more wishlist games.');
+      else if(!refreshed.size&&!automatic)setNotice('Unable to refresh dates. Your saved dates have been kept.');
+    }finally{releaseRefreshInFlight.current=false;setRefreshingReleases(false);}
+  }
+  useEffect(()=>{
+    const identity=owner.current??'local';
+    if(ready&&autoReleaseOwner.current!==identity){autoReleaseOwner.current=identity;void refreshReleases(true);}
+  },[ready]);
   function save(item: Item) {
     const current = dataRef.current;
     if (
@@ -486,6 +540,7 @@ export default function Home() {
   }
   function navigate(next: string, status = 'All') {
     setSection(next);
+    setHardwareFilter('All hardware');
     if (next === 'games') setGamesView('collection');
     setQuery('');
     setTab(status);
@@ -502,7 +557,7 @@ export default function Home() {
     platform,
     launcher,
     sort,
-  ), [data.items, section, query, tab, platform, launcher, sort]);
+  ).filter(i=>!['consoles','hardwareWishlist'].includes(section)||hardwareFilter==='All hardware'||hardwareCategory(i)===hardwareFilter), [data.items, section, query, tab, platform, launcher, sort,hardwareFilter]);
   const games = useMemo(() => data.items.filter((i) => i.kind === 'game' && i.owned), [data.items]);
   const completed = games.filter((i) => i.status === 'Completed').length;
   const visibility = collectionAccess(data);
@@ -514,10 +569,13 @@ export default function Home() {
           ? 'All games'
           : 'All',
       game: 'Games',
-      console: 'Consoles',
+      console: 'Devices',
       build: 'Planned builds',
     })[key] || key;
   function add() {
+    addReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if(['consoles','hardwareWishlist'].includes(section) && hardwareFilter==='PCs'){setDraft(makeItem('build','',!isWishlist));return;}
+    setCatalogCategory(hardwareFilter);
     setAddKind(
       section === 'consoles' || section === 'hardwareWishlist'
         ? 'console'
@@ -735,10 +793,11 @@ export default function Home() {
           </header>
           <div className="page">
             <p role="status" className="library-sync-status">{sync}</p>
-            {hasDraft && <div className="detail-actions"><button className="secondary" disabled={sync === 'Saving…'} onClick={() => void pushAccount(dataRef.current)}>Retry save</button><button className="secondary" onClick={() => download('pixel-dex-unsaved.json',JSON.stringify(dataRef.current,null,2),'application/json')}>Export unsaved copy</button><button className="secondary" disabled={sync === 'Saving…'} onClick={() => setConfirm({title:'Load saved account library?',description:'This discards the unsaved browser draft. Export it first if you want to keep it.',run:() => {if(owner.current) localStorage.removeItem(draftKey(owner.current)); window.location.reload();}})}>Load account version</button></div>}
+            {hasDraft && <div className="detail-actions"><button className="secondary" disabled={sync === 'Saving…'} onClick={() => void pushAccount(dataRef.current)}>Retry save</button><button className="secondary" onClick={() => download('pixel-dex-unsaved.json',JSON.stringify(dataRef.current,null,2),'application/json')}>Export unsaved copy</button><button className="secondary" disabled={sync === 'Saving…'} onClick={() => setConfirm({title:'Load saved account library?',description:'This discards the unsaved browser draft. Export it first if you want to keep it.',run:() => {if(owner.current) clearMatchingDraft(localStorage, draftKey(owner.current), dataRef.current, revision.current); window.location.reload();}})}>Load account version</button></div>}
             {storageError && (
               <div className="warning" role="alert">
                 {storageError}
+                {!hasDraft && <button className="secondary" onClick={() => window.location.reload()}>Reload library</button>}
               </div>
             )}
             <div className="page-heading">
@@ -762,7 +821,7 @@ export default function Home() {
                     {isWishlist
                       ? 'Add to wishlist'
                       : section === 'consoles'
-                        ? 'Add console'
+                        ? 'Add hardware'
                         : section === 'builds'
                           ? 'New build'
                           : 'Add game'}
@@ -886,7 +945,7 @@ export default function Home() {
                       {section === 'builds'
                         ? 'current builds'
                         : section === 'consoles'
-                          ? 'consoles in your collection'
+                          ? 'items in your hardware collection'
                           : section === 'gameWishlist'
                             ? 'games on your wishlist'
                             : 'items on your wishlist'}
@@ -903,28 +962,7 @@ export default function Home() {
                     )}
                   </div>
                 )}
-                {section === 'hardwareWishlist' && (
-                  <Tabs value={tab} onValueChange={(v) => setTab(String(v))}>
-                    <TabsList className="collection-tabs" variant="line">
-                      {['All', 'console', 'build'].map((t) => (
-                        <TabsTrigger
-                          key={t}
-                          value={t}
-                          className={tab === t ? 'selected' : ''}
-                        >
-                          {displayTab(t)}
-                          <span>
-                            {
-                              sectionItems.filter(
-                                (i) => t === 'All' || i.kind === t,
-                              ).length
-                            }
-                          </span>
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                  </Tabs>
-                )}
+                {['consoles','hardwareWishlist'].includes(section) && <div className="hardware-sections" aria-label="Hardware categories">{['All hardware',...hardwareCategories].map(category=><button key={category} aria-pressed={hardwareFilter===category} className={hardwareFilter===category?'selected':''} onClick={()=>{setHardwareFilter(category);setTab('All');}}>{category}<span>{sectionItems.filter(i=>category==='All hardware'||hardwareCategory(i)===category).length}</span></button>)}</div>}
                 <div className="toolbar">
                   {section === 'games' && (
                     <Picker
@@ -1062,12 +1100,12 @@ export default function Home() {
                           <TableHead>Title</TableHead>
                           <TableHead>
                             {section === 'consoles'
-                              ? 'Edition'
+                              ? 'Category'
                               : 'Platform / type'}
                           </TableHead>
                           <TableHead>
                             {section === 'consoles'
-                              ? 'Color'
+                              ? 'Edition / details'
                               : 'Launcher / details'}
                           </TableHead>
                           <TableHead>
@@ -1094,13 +1132,11 @@ export default function Home() {
                               </button>
                             </TableCell>
                             <TableCell>
-                              {i.kind === 'console'
-                                ? i.edition
-                                : i.platform || 'PC build'}
+                              {i.kind !== 'game' ? hardwareCategory(i) : i.platform}
                             </TableCell>
                             <TableCell>
                               {i.kind === 'console'
-                                ? i.color || '—'
+                                ? [i.edition,i.color].filter(Boolean).join(' · ') || '—'
                                 : i.kind === 'build'
                                   ? `${i.components.length} components`
                                   : i.launcher}
@@ -1196,7 +1232,7 @@ export default function Home() {
                               <i />
                               {!i.owned
                                 ? `${i.priority} priority`
-                                : i.kind === 'console'
+                                : i.kind !== 'game'
                                   ? 'Owned'
                                   : i.status}
                             </span>
@@ -1239,14 +1275,14 @@ export default function Home() {
           </div>
         </main>
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
-          <DialogContent className="catalog-dialog">
+          <DialogContent className="catalog-dialog" finalFocus={addReturnFocus}>
             <DialogTitle>
               Add to {isWishlist ? 'your wishlist' : 'your collection'}
             </DialogTitle>
             <DialogDescription>
-              Search the sample catalog, or create your own entry.
+              {addKind==='game'?'Search IGDB for games, or create your own entry.':'Search hardware by model, brand, or special edition.'}
             </DialogDescription>
-            {section === 'hardwareWishlist' && (
+            {['consoles','hardwareWishlist'].includes(section) && (
               <Tabs
                 value={addKind}
                 onValueChange={(v) => {
@@ -1255,11 +1291,12 @@ export default function Home() {
                 }}
               >
                 <TabsList>
-                  <TabsTrigger value="console">Consoles</TabsTrigger>
+                  <TabsTrigger value="console">Devices & accessories</TabsTrigger>
                   <TabsTrigger value="build">PC builds</TabsTrigger>
                 </TabsList>
               </Tabs>
             )}
+            {addKind==='console' && <Picker label="Hardware category" value={catalogCategory} options={['All hardware',...hardwareCategories.filter(c=>c!=='PCs')]} onChange={setCatalogCategory}/>}
             <label className="search-box">
               <Search size={18} />
               <input
@@ -1274,14 +1311,9 @@ export default function Home() {
                 onChange={(e) => setCatalogQuery(e.target.value)}
               />
             </label>
+            {addKind==='game' && <p className="muted" role="status">{gameSearch.loading?'Searching IGDB…':gameSearch.error || (catalogQuery.trim().length<2?'Type at least 2 characters to search IGDB.':'Games provided by IGDB')}</p>}
             <div className="catalog-results">
-              {catalog
-                .filter(
-                  (i) =>
-                    i.kind === addKind &&
-                    i.title.toLowerCase().includes(catalogQuery.toLowerCase()),
-                )
-                .map((c) => {
+              {catalogResults                .map((c) => {
                   const exists = data.items.some((i) => i.catalogId === c.id);
                   return (
                     <button
@@ -1312,12 +1344,7 @@ export default function Home() {
                     </button>
                   );
                 })}
-              {addKind !== 'build' &&
-                !catalog.some(
-                  (i) =>
-                    i.kind === addKind &&
-                    i.title.toLowerCase().includes(catalogQuery.toLowerCase()),
-                ) && (
+              {addKind !== 'build' && !gameSearch.loading && !gameSearch.error && catalogResults.length===0 && (
                   <p className="muted">
                     No catalog match. You can add this title below.
                   </p>
@@ -1326,17 +1353,17 @@ export default function Home() {
             <button
               className="secondary"
               onClick={() => {
-                setDraft(makeItem(addKind, catalogQuery, !isWishlist));
+                setDraft({...makeItem(addKind, catalogQuery, !isWishlist),...(addKind==='console'&&catalogCategory!=='All hardware'?{hardwareCategory:catalogCategory as HardwareCategory}:{})});
                 setAddOpen(false);
               }}
             >
               <Plus size={16} />
               {addKind === 'build'
-                ? 'Create planned build'
+                ? (isWishlist?'Create planned build':'Create PC build')
                 : 'Add a custom entry'}
             </button>
             <p className="dialog-footnote">
-              16 games · 8 consoles · No connected accounts
+              {addKind==='game'?'Game catalog powered by IGDB':`${hardwareCatalog.length} hardware models · Custom entries welcome`}
             </p>
           </DialogContent>
         </Dialog>
@@ -1351,6 +1378,7 @@ export default function Home() {
                   <Cover item={selected} />
                 </div>
                 <div className="detail-body">
+                  {selected.kind==='console' && hardwarePhotoFor(selected) && <a className="hardware-credit" href="/hardware-credits" target="_blank" rel="noreferrer">Photo credits</a>}
                   <div className="eyebrow">
                     {selected.owned ? 'IN YOUR COLLECTION' : 'ON YOUR WISHLIST'}
                   </div>
@@ -1583,6 +1611,7 @@ export default function Home() {
               Account, appearance, and collection data.
             </DialogDescription>
             <AccountStatus />
+            <div className="settings-section"><h3>Release dates</h3><p>IGDB dates are checked when you open your library if more than a day old. Manual dates stay unchanged. Each refresh checks up to 20 games, oldest first. Results may be cached for up to an hour.</p><button className="secondary" disabled={refreshingReleases} onClick={()=>void refreshReleases()}>{refreshingReleases?'Refreshing dates…':'Refresh wishlist dates'}</button></div>
             {canImport && <div className="settings-section"><h3>Bring your local library</h3><p>This account has no saved library yet. Import the collection from this browser, including lists and notes.</p><button className="secondary" onClick={() => setConfirm({title:'Import browser library into this account?',description:'Only import if this browser library belongs to you. The original local copy will be kept.',run:() => {try {const value=JSON.parse(localStorage.getItem(STORAGE)||'null'); if(!validCollection(value)) throw new Error(); commit(value);} catch {setNotice('The local collection could not be imported.');}}})}>Import browser library</button></div>}
             <Field label="Appearance">
               <Picker
@@ -1731,13 +1760,23 @@ function Editor({
   onSave: (item: Item) => void;
 }) {
   const [form, setForm] = useState(item);
+  const [releaseLoading,setReleaseLoading]=useState(false);
+  const [releaseError,setReleaseError]=useState('');
+  useEffect(()=>{
+    if(!item.catalogId?.startsWith('igdb:'))return;
+    const controller=new AbortController();let active=true;
+    const timeout=setTimeout(()=>controller.abort(),12000);
+    setReleaseLoading(true);
+    fetchReleaseCatalog(item.catalogId,controller.signal).then(catalog=>{if(active)setForm(f=>applyCatalogRelease({...f,releaseCatalog:catalog}));}).catch(()=>{if(active)setReleaseError('Could not check dates. Your existing date has been kept.');}).finally(()=>{clearTimeout(timeout);if(active)setReleaseLoading(false);});
+    return()=>{active=false;clearTimeout(timeout);controller.abort();};
+  },[item.id,item.catalogId]);
   const set = <K extends keyof Item>(key: K, value: Item[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="edit-dialog">
         <DialogTitle>
-          {item.title ? 'Edit details' : `New ${item.kind}`}
+          {item.title ? 'Edit details' : `New ${item.kind==='console'?'hardware':item.kind}`}
         </DialogTitle>
         <DialogDescription>
           {item.kind === 'build'
@@ -1784,6 +1823,13 @@ function Editor({
               }
             />
           </Field>
+          {item.kind==='console' && <Field label="Hardware category"><Picker label="Hardware category" value={hardwareCategory(form)} options={hardwareCategories.filter(c=>c!=='PCs')} onChange={v=>set('hardwareCategory',v as HardwareCategory)}/></Field>}
+          {item.kind==='console' && variantsFor(form.catalogId).length>0 && <section className="hardware-variant-editor">
+            <Field label="Edition / color variant">
+              <Picker label="Hardware variant" value={variantFor(form)?.label??'Custom / other'} options={[...variantsFor(form.catalogId).map(v=>v.label),'Custom / other']} onChange={label=>setForm(f=>selectHardwareVariant(f,label))}/>
+            </Field>
+            <div className="hardware-variant-preview"><Cover item={form}/><div><strong>{form.color || 'Custom color'}</strong><p>{hardwarePhotoFor(form)?'Photo of the selected variant.':'A matching photo is not available yet.'}</p><a href="/hardware-credits" target="_blank" rel="noreferrer">Photo credits</a></div></div>
+          </section>}
           <div className="form-grid">
             <Field label="Collection">
               <Picker
@@ -1798,9 +1844,10 @@ function Editor({
                 <Picker
                   label="Platform"
                   value={form.platform}
-                  options={[
+                  options={form.releaseCatalog?.platforms.length ? [...new Set([...form.releaseCatalog.platforms.map(p=>p.name),form.platform].filter(Boolean))] : [
                     ...new Set(
                       [
+                        ...(form.releaseCatalog?.platforms.map(p=>p.name)??[]),
                         'PC',
                         'PlayStation',
                         'PlayStation 5',
@@ -1815,7 +1862,7 @@ function Editor({
                     ),
                   ]}
                   onChange={(v) =>
-                    setForm((f) => ({
+                    setForm((f) => applyCatalogRelease({
                       ...f,
                       platform: v,
                       launcher:
@@ -1906,6 +1953,11 @@ function Editor({
                     onChange={(v) => set('priority', v)}
                   />
                 </Field>
+                {form.catalogId?.startsWith('igdb:') && <>
+                  <Field label="Release date source"><Picker label="Release date source" value={form.releaseSource==='catalog'?'IGDB dates':'Manual date'} options={['Manual date','IGDB dates']} onChange={v=>setForm(f=>applyCatalogRelease({...f,releaseSource:v==='IGDB dates'?'catalog':'manual',releaseRegion:f.releaseRegion??'Worldwide / earliest available'}))}/></Field>
+                  <Field label="Release region"><Picker label="Release region" value={form.releaseRegion??'Worldwide / earliest available'} options={[...releaseRegions]} onChange={v=>setForm(f=>applyCatalogRelease({...f,releaseRegion:v as ReleaseRegion}))}/></Field>
+                  <p className="muted" role="status">{releaseLoading?'Checking release dates…':releaseError|| (form.releaseCatalog?'Last checked '+new Date(form.releaseCatalog.checkedAt).toLocaleString():'No catalog dates loaded yet.')}{form.releaseSource==='catalog'?' Uses the selected platform. Regional selections fall back to a worldwide date; earliest available compares all regions. No matching release is shown as TBA.':''}</p>
+                </>}
                 <Field label="Release timing">
                   <Picker
                     label="Release timing"
@@ -1941,6 +1993,7 @@ function Editor({
                             | 'Already released'
                         ],
                         releaseDate: '',
+                        releaseSource:'manual',
                       }))
                     }
                   />
@@ -1951,7 +2004,7 @@ function Editor({
                       required
                       type="date"
                       value={form.releaseDate}
-                      onChange={(e) => set('releaseDate', e.target.value)}
+                      onChange={(e) => setForm(f=>({...f,releaseDate:e.target.value,releaseSource:'manual'}))}
                     />
                   </Field>
                 )}
@@ -1965,7 +2018,7 @@ function Editor({
                       step="1"
                       placeholder="e.g. 2027"
                       value={form.releaseDate}
-                      onChange={(e) => set('releaseDate', e.target.value)}
+                      onChange={(e) => setForm(f=>({...f,releaseDate:e.target.value,releaseSource:'manual'}))}
                     />
                   </Field>
                 )}

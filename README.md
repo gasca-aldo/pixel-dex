@@ -82,3 +82,31 @@ Password sign-in through `/api/login` permits 10 attempts per rolling 15-minute 
 Test-only users with `@test.com` addresses must be created as confirmed users using Supabase admin user creation (email_confirm=true). No public email-verification bypass is added. Do not disable verification for all users. A publishable key cannot create admin-confirmed users.
 
 The private library checks the requested user ID on reads, clears state when the active account changes, and rejects late responses for an invalidated session. The active email is displayed in the header. PostgreSQL tests cover independent records for two users.
+
+## IGDB catalog
+
+Game search is available in the collection/wishlist picker and list/profile game picker. It uses `/api/catalog` with a 250 ms debounce and at least two characters. Manual entry remains available. Existing Steam catalog IDs remain unchanged; IGDB IDs use an `igdb:` prefix and persist in the existing account schema. No database migration is required.
+
+The Cloudflare Worker requires `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` bindings. Keep the latter as a Worker secret. `keep_vars` preserves dashboard variables during deployment. The GameCatalog SQLite Durable Object caches search results for one hour, retains cover addresses, renews the Twitch app token, and limits uncached upstream requests. Credentials and tokens never enter browser responses.
+
+For local development, configure the same bindings in an ignored `.dev.vars` file (never commit credentials), then restart the development server. Without these bindings, live search shows a configuration message; manual entry continues to work. Cloudflare secrets are not automatically copied to localhost.
+
+Release dates retain IGDB platform/region records and source precision. New IGDB entries default to Worldwide / earliest available; the editor also offers North America, Europe, and Japan. Regional selection uses a matching regional record, then a worldwide record, never a different region. Known early-access, alpha/beta, cancelled, and delisted records are excluded. Exact dates stay exact; month/quarter/year formats display their known year, and unknown dates show TBA.
+
+Wishlist games with releaseSource=catalog are checked once when the library opens if more than 24 hours old, up to 20 entries, oldest first. Settings → Refresh wishlist dates supports manual batches. The server coalesces requests and caches release metadata for one hour. Opening the editor checks that game's release metadata and updates the available platform options. Changes to platform or region recalculate catalog dates. Editing a date or timing switches it to manual. Legacy entries without an explicit catalog source remain unchanged until the user chooses IGDB dates.
+
+Refreshes preserve saved dates on failure and discard results if the account or library changed while requests were in flight. Updates use the normal account revision/draft save path. No scheduled background refresh runs while the app is closed. No database migration is needed.
+
+Validation: TypeScript and production build passed; all 36 existing/new tests passed, followed by the added current-format date test. Production checks confirmed Hades search, confirmed dates, short-query validation, and a cover returning HTTP 200 image/jpeg.
+
+Catalog search hides IGDB mod/fork types and entries tagged unofficial, fangame, ROM hack, homebrew, unlicensed, or bootleg. Official ports/remakes remain eligible. This is a metadata filter, not a licensing guarantee: incomplete IGDB tags may leave unofficial results visible. Existing saved records and their covers are unaffected.
+
+Search performance: browser caches up to 30 recent queries for five minutes; related-game lookups are reused for one hour; exact matches skip prefix fallback; cached searches and covers are read before serial upstream work; cover metadata writes are batched. Cold searches still depend on IGDB response times.
+
+Search resilience: direct suggestions are returned separately from optional related games. The browser skips obsolete queued searches and keeps direct results if enrichment fails. The catalog coalesces identical requests, spaces upstream starts, and allows cached requests through without a global concurrency block. Non-JSON responses use a controlled UI error. Regression tests cover concurrent requests, nonblocking cached covers, query coalescing and malformed responses.
+
+## Hardware
+
+Hardware combines owned devices and existing PC builds. Category sections cover Consoles, PCs, Handhelds, Controllers, VR headsets and Accessories; the hardware wishlist uses the same categories. The curated catalog includes 172 models/editions and supports custom entries. Catalog search matches model, manufacturer, edition and handheld subtype. Existing model IDs remain stable and legacy devices infer their category without rewriting the user's library. The optional hardwareCategory field is validated in saved/imported data. PCs continue using component and upgrade-history editing.
+
+Manufacturer references checked: https://play.date/ , https://www.goretroid.com/collections/retro-game-system , https://www.ayntec.com/ , https://rog.asus.com/us/gaming-handhelds/rog-ally/rog-ally-x-2024/ , https://www.playstation.com/en-us/accessories/dualsense-wireless-controller/ , https://www.meta.com/quest/ . This is a curated starting catalog, not a complete or automatically synced manufacturer feed. Hardware artwork still uses the existing fallback illustrations.

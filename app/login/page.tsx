@@ -1,7 +1,9 @@
  'use client';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { type User } from '@supabase/supabase-js';
-import { getSupabase } from '@/lib/supabase';
+import { getSupabase, sendPasswordUpdate } from '@/lib/supabase';
+import { updatePasswordForOwner } from '@/lib/password-update';
+import { createIdentityGuard } from '@/lib/auth-identity';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -12,6 +14,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const identity = useRef(createIdentityGuard());
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [email, setEmail] = useState('');
@@ -19,9 +22,14 @@ export default function LoginPage() {
   useEffect(() => {
     let active = true;
     const auth = getSupabase().auth;
-    void auth.getUser().then(({data}) => { if(active) { setUser(data.user); setLoading(false); } }).catch(() => { if(active) { setError('Unable to connect. Please reload to try again.'); setLoading(false); } });
-    const {data} = auth.onAuthStateChange((_event, session) => {setUser(session?.user ?? null); setPassword('');});
-    return () => { active = false; data.subscription.unsubscribe(); };
+    const current = identity.current.capture();
+    void auth.getUser().then(({data}) => { if(active && current()) setUser(data.user); }).catch(() => { if(active && current()) setError('Unable to connect. Please reload to try again.'); }).finally(() => { if(active) setLoading(false); });
+    const {data} = auth.onAuthStateChange((_event, session) => {
+      if(!active) return;
+      identity.current.invalidate();
+      setUser(session?.user ?? null); setPassword(''); setError(''); setMessage('');
+    });
+    return () => { active = false; identity.current.invalidate(); data.subscription.unsubscribe(); };
   }, []);
   async function run(action: () => Promise<void>) {
     if(busyRef.current) return;
@@ -36,8 +44,7 @@ export default function LoginPage() {
       const auth = getSupabase().auth;
       const redirectTo = window.location.origin + '/auth/callback';
       if(user) {
-        const {error} = await auth.updateUser({password});
-        if(error) throw error;
+        await updatePasswordForOwner(auth, user.id, password, identity.current.capture(), sendPasswordUpdate);
         setPassword('');
         window.location.replace('/');
       } else if(mode === 'login') {
@@ -60,7 +67,7 @@ export default function LoginPage() {
       } else {
         const {error} = await auth.resetPasswordForEmail(email.trim(), {redirectTo});
         if(error) throw error;
-        setMessage('If an account exists for this email, you will receive a password-reset link. Open it in this browser to choose a new password.');
+        setMessage('If an account exists for this email, you will receive a password-reset link. Open the link to choose a new password.');
       }
     });
   }
@@ -80,6 +87,7 @@ export default function LoginPage() {
       {user ? <><a href="/">Go to My collection</a><Button variant="outline" disabled={busy} onClick={() => run(async () => { const {error} = await getSupabase().auth.signOut(); if(error) throw error; setMessage('Signed out.'); })}>Sign out</Button></> : <nav aria-label="Account options"><Button variant="link" disabled={busy} onClick={() => changeMode(mode === 'signup' ? 'login' : 'signup')}>{mode === 'signup' ? 'Already have an account? Sign in' : 'Create an account'}</Button><Button variant="link" disabled={busy} onClick={() => changeMode(mode === 'reset' ? 'login' : 'reset')}>{mode === 'reset' ? 'Back to sign in' : 'Forgot password?'}</Button></nav>}
     </>}
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
+    <p><a href="/privacy">Privacy notice</a></p>
     <p className="account-local-note">Sign in to access your account library. You can import an existing browser library from Settings.</p>
   </section></main>;
 }
