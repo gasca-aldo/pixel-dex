@@ -1,5 +1,7 @@
 # Live validation — September 13, 2026
 
+September 18 sharing update: owner/second-account/signed-out browser checks and deployed stale-private-tab regression passed. Both disposable accounts were deleted. See SHARING-VALIDATION.md for current evidence and limitations.
+
 September 15 authentication update: the dedicated live authentication checks are complete, including actual Google chooser sign-in, real emailed recovery and invalid/used/expired links, cross-browser recovery, account switching during a save, and automatic session renewal. See AUTH-VALIDATION.md for the current results; authentication items described as pending in the historical runs below have been superseded. Physical-device and screen-reader checks remain outstanding.
 
 Applied supabase/migrations/202609080002_shared_pages.sql to project yzmnrcfauyvcbxxmkuxh through the authenticated Supabase SQL Editor. The transaction returned success. Existing library payloads and revisions were preserved.

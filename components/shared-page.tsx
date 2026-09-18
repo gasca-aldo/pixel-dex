@@ -1,6 +1,7 @@
  'use client';
 import {useEffect,useState} from 'react';
 import {getSupabase} from '@/lib/supabase';
+import {createIdentityGuard} from '@/lib/auth-identity';
 import {coverFor,coverSrcSet} from '@/lib/covers';
 import {ListReadView} from '@/components/game-lists';
 import {type GameRef,type GameList} from '@/lib/tracker';
@@ -21,6 +22,9 @@ export function SharedPage({handle,slug}:{handle:string;slug?:string}) {
    let lastStarted=0;
    let timer: ReturnType<typeof setTimeout> | undefined;
    let controller: AbortController | undefined;
+   const db=getSupabase();
+   const identity=createIdentityGuard();
+   let sessionOwner:string|null|undefined;
    function schedule() {
      clearTimeout(timer);
      if(active && document.visibilityState==='visible') timer=setTimeout(()=>void load(),30000);
@@ -28,12 +32,12 @@ export function SharedPage({handle,slug}:{handle:string;slug?:string}) {
    async function load() {
      if(!active || busy || document.visibilityState!=='visible') return;
      busy=true;lastStarted=Date.now();
-     controller=new AbortController();
-     const timeout=setTimeout(()=>controller?.abort(),15000);
+     const current=identity.capture();
+     const requestController=new AbortController();controller=requestController;
+     const timeout=setTimeout(()=>requestController.abort(),15000);
      try {
-       const db=getSupabase();
-       const {data,error}=await db.rpc(slug?'read_shared_list':'read_shared_profile',slug?{profile_handle:handle,list_slug:slug}:{profile_handle:handle}).abortSignal(controller.signal);
-       if(!active)return;
+       const {data,error}=await db.rpc(slug?'read_shared_list':'read_shared_profile',slug?{profile_handle:handle,list_slug:slug}:{profile_handle:handle}).abortSignal(requestController.signal);
+       if(!active||!current())return;
        if(error)throw new Error('Unable to load this page. Please try again.');
        const signature=JSON.stringify(data);
        setError('');
@@ -41,17 +45,25 @@ export function SharedPage({handle,slug}:{handle:string;slug?:string}) {
          previous=signature;
          setProfile(slug?null:data);setList(slug?data?.list??null:null);setName(data?.name??'');
        }
-     }catch(e){if(active){previous='';setError(e instanceof Error?e.message:'Unable to load page.');setProfile(null);setList(null);}}
-     finally{clearTimeout(timeout);busy=false;if(active){setLoading(false);schedule();}}
+     }catch(e){if(active&&current()){previous='';setError(e instanceof Error?e.message:'Unable to load page.');setProfile(null);setList(null);}}
+     finally{clearTimeout(timeout);if(active&&current()){busy=false;setLoading(false);schedule();}}
    }
    const onVisible=()=>{
      if(document.visibilityState!=='visible'){clearTimeout(timer);return;}
      if(Date.now()-lastStarted>=1000)void load();else schedule();
    };
+   const {data:{subscription}}=db.auth.onAuthStateChange((_event,session)=>{
+     const next=session?.user.id??null;
+     if(next===sessionOwner)return;
+     sessionOwner=next;identity.invalidate();controller?.abort();clearTimeout(timer);busy=false;previous='';
+     // Clear immediately, including hidden tabs; an old request must not restore private content.
+     setProfile(null);setList(null);setName('');setError('');setLoading(true);
+     queueMicrotask(()=>{if(active)void load();});
+   });
    void load();
    document.addEventListener('visibilitychange',onVisible);
    window.addEventListener('focus',onVisible);
-   return()=>{active=false;clearTimeout(timer);controller?.abort();document.removeEventListener('visibilitychange',onVisible);window.removeEventListener('focus',onVisible);};
+   return()=>{active=false;identity.invalidate();subscription.unsubscribe();clearTimeout(timer);controller?.abort();document.removeEventListener('visibilitychange',onVisible);window.removeEventListener('focus',onVisible);};
  },[handle,slug]);
  return <main className="shared-page"><header className="shared-nav"><a className="account-brand" href="/">pixel dex</a><a href="/login">My account</a></header>
  {loading?<p role="status">Loading…</p>:error?<p role="alert">{error}</p>:!profile&&!list?<section className="quiet-empty"><h1>Page unavailable</h1><p>This page may be private or no longer available.</p><a href="/login">Sign in</a></section>:list?<>

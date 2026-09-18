@@ -33,6 +33,8 @@ Prepared September 12: server-side deletion with verified identity, typed confir
 
 ## 3. Sharing validation
 
+September 18: live browser checks completed for owner, another account, and signed-out visitors, including notes, profile discovery, direct links, visibility changes, stable renamed addresses, and stale deleted links. Found and fixed private content remaining in another tab after sign-out; deployed and verified the fix. Both disposable accounts were removed. All 93 automated tests passed. See SHARING-VALIDATION.md for scope and polling limitations. The historical browser-testing gap below is superseded; physical-device/accessibility testing remains separate.
+
 Verified September 13: local PostgreSQL checks plus live API checks with two disposable accounts and signed-out requests. Public/private/unlisted lists and notes, profile discovery, cross-account reads/writes, visibility changes, stable links, public field filtering, stale-save rejection, and account-deletion cascades passed. Browser interaction, mobile accessibility, and offline recovery tests remain separate outstanding work.
 
 - Test with two separately authenticated accounts and a signed-out browser.
