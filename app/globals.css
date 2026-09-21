@@ -1452,6 +1452,14 @@ h1 {
   }
 }
 @media (max-width: 767px) {
+  [data-slot='dialog-content'] > [data-slot='dialog-close'],
+  [data-slot='sheet-content'] > [data-slot='sheet-close'] {
+    width: 44px;
+    height: 44px;
+  }
+  [data-slot='dialog-header'] {
+    padding-right: 28px;
+  }
   .search-box input,
   .component-edit input {
     font-size: 16px;
