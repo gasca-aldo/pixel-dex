@@ -1,5 +1,6 @@
 import {DurableObject} from 'cloudflare:workers';
 import {mapGame,releaseCatalogFor,gameFields,searchBody,prefixBody,rankGames,relatedBody,titleScore,type RawGame} from './igdb-map';
+import {HardwareCatalog,HARDWARE_RETENTION,type HardwareEndpoint} from './igdb-hardware';
 export type CatalogEnv={TWITCH_CLIENT_ID?:string;TWITCH_CLIENT_SECRET?:string;GAME_CATALOG:DurableObjectNamespace};
 const reply=(body:unknown,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
 type Cached<T>={until:number;body:T};
@@ -9,8 +10,16 @@ export class GameCatalog extends DurableObject<CatalogEnv> {
  private renewing?:Promise<void>;
  private pending=new Map<string,Promise<Response>>();
  private queued=0;
+ private hardware?:HardwareCatalog;
  async fetch(request:Request) {
   const url=new URL(request.url),id=url.searchParams.get('id'),q=(url.searchParams.get('q')??'').trim();
+  if(url.searchParams.has('hardware')){
+   const platform=url.searchParams.get('platform'),version=url.searchParams.get('version');
+   if((platform!==null&&!/^[1-9]\d{0,9}$/.test(platform))||(version!==null&&(!platform||!/^[1-9]\d{0,9}$/.test(version)))||(!platform&&(q.length<2||q.length>120)))return reply({error:'Invalid hardware request'},400);
+   this.hardware??=new HardwareCatalog({get:key=>this.ctx.storage.get(key),put:async(key,value)=>{await this.ctx.storage.put(key,value);if(!await this.ctx.storage.getAlarm())await this.ctx.storage.setAlarm(Date.now()+86400000);}},<T>(endpoint:HardwareEndpoint,body:string)=>this.query<T>(body,endpoint));
+   try{return reply(await this.hardware.load(q,platform?Number(platform):undefined,version?Number(version):undefined,url.searchParams.get('versions')==='1'));}
+   catch{return reply({error:'Unable to load hardware right now. Existing items have not been changed.'},503);}
+  }
   const releaseId=url.searchParams.get('release');
   if(releaseId){
    if(!/^[1-9]\d{0,9}$/.test(releaseId))return reply({error:'Invalid game'},400);
@@ -47,7 +56,7 @@ export class GameCatalog extends DurableObject<CatalogEnv> {
   })().finally(()=>{this.renewing=undefined;});
   await this.renewing;
  }
- private async query(body:string):Promise<RawGame[]> {
+ private async query<T=RawGame>(body:string,endpoint:'games'|HardwareEndpoint='games'):Promise<T[]> {
   await this.authorize();
   // Bound concurrency and space starts, allowing requests to overlap on I/O.
   // No global blockConcurrencyWhile: cached covers/searches remain responsive.
@@ -56,10 +65,12 @@ export class GameCatalog extends DurableObject<CatalogEnv> {
   try {
    const start=Math.max(Date.now(),this.nextRequest);this.nextRequest=start+350;
    const wait=start-Date.now();if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));
-   const response=await fetch('https://api.igdb.com/v4/games',{method:'POST',headers:{'Client-ID':this.env.TWITCH_CLIENT_ID!,Authorization:`Bearer ${this.token}`,'Content-Type':'text/plain'},body,signal:AbortSignal.timeout(4000)});
+   const response=await fetch('https://api.igdb.com/v4/'+endpoint,{method:'POST',headers:{'Client-ID':this.env.TWITCH_CLIENT_ID!,Authorization:`Bearer ${this.token}`,'Content-Type':'text/plain'},body,signal:AbortSignal.timeout(4000)});
    if(response.status===401)this.expires=0;
    if(!response.ok)throw new Error('Catalog unavailable');
-   return await response.json() as RawGame[];
+   const rows=await response.json();
+   if(!Array.isArray(rows))throw new Error('Invalid catalog response');
+   return rows as T[];
   }finally{this.queued--;}
  }
  private async rememberCovers(games:RawGame[]) {
@@ -100,16 +111,23 @@ export class GameCatalog extends DurableObject<CatalogEnv> {
   if(!await this.ctx.storage.getAlarm())await this.ctx.storage.setAlarm(Date.now()+86400000);
   return reply(result);
  }
- async alarm(){const entries=await this.ctx.storage.list<Cached<unknown>>({prefix:'search:'});const expired=[...entries].filter(([,v])=>v.until<Date.now()).map(([k])=>k);if(expired.length)await this.ctx.storage.delete(expired);}
+ async alarm(){const entries=await this.ctx.storage.list<Cached<unknown>>({prefix:'search:'});const expired=[...entries].filter(([,v])=>v.until<Date.now()).map(([k])=>k);if(expired.length)await this.ctx.storage.delete(expired);
+  const hardware=await this.ctx.storage.list<Cached<{checkedAt:number}>>({prefix:'hardware:'});
+  const old=[...hardware].filter(([,v])=>Date.now()-v.body.checkedAt>=HARDWARE_RETENTION).map(([k])=>k);
+  if(old.length)await this.ctx.storage.delete(old);
+  if(hardware.size>old.length)await this.ctx.storage.setAlarm(Date.now()+86400000);
+ }
 }
 export async function catalogRequest(request:Request,env:CatalogEnv) {
  const url=new URL(request.url);
  if(request.method!=='GET')return reply({error:'Method not allowed'},405);
  const cover=url.pathname.match(/^\/api\/catalog\/cover\/([1-9]\d{0,9})$/);
  const release=url.pathname.match(/^\/api\/catalog\/releases\/([1-9]\d{0,9})$/);
- if(url.pathname!=='/api/catalog'&&!cover&&!release)return reply({error:'Not found'},404);
+ const hardware=url.pathname.match(/^\/api\/catalog\/hardware(?:\/platforms\/([1-9]\d{0,9})(?:\/(versions)(?:\/([1-9]\d{0,9}))?)?)?$/);
+ if(url.pathname!=='/api/catalog'&&!cover&&!release&&!hardware)return reply({error:'Not found'},404);
  const target=new URL('https://catalog/');
- if(release)target.searchParams.set('release',release[1]);else if(cover)target.searchParams.set('id',cover[1]);else {target.searchParams.set('q',url.searchParams.get('q')??'');if(url.searchParams.get('related')==='1')target.searchParams.set('related','1');}
+ if(hardware){target.searchParams.set('hardware','1');if(hardware[1])target.searchParams.set('platform',hardware[1]);if(hardware[3])target.searchParams.set('version',hardware[3]);else if(hardware[2])target.searchParams.set('versions','1');target.searchParams.set('q',url.searchParams.get('q')??'');}
+ else if(release)target.searchParams.set('release',release[1]);else if(cover)target.searchParams.set('id',cover[1]);else {target.searchParams.set('q',url.searchParams.get('q')??'');if(url.searchParams.get('related')==='1')target.searchParams.set('related','1');}
  const response=await env.GAME_CATALOG.get(env.GAME_CATALOG.idFromName('igdb')).fetch(target);
  if(!cover)return response;
  if(!response.ok)return response;

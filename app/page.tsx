@@ -4,6 +4,7 @@ import {refreshReleaseBatch} from '@/lib/release-refresh';
 import {hardwarePhotoFor,variantFor,variantsFor,selectHardwareVariant} from '@/lib/hardware-variants';
 import {hardwareCategories,hardwareCategory,hardwareCatalog,type HardwareCategory} from '@/lib/hardware-catalog';
 import {useGameSearch} from '@/hooks/use-game-search';
+import {HardwareSearch,HardwareMetadataDetails} from '@/components/hardware-search';
 import { memo, useMemo, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Gamepad2,
@@ -171,12 +172,12 @@ const Cover = memo(function Cover({
   item,
   small = false,
 }: {
-  item: Pick<Item, 'kind' | 'title' | 'catalogId'> & Partial<Pick<Item,'edition'|'color'>>;
+  item: Pick<Item, 'kind' | 'title' | 'catalogId'> & Partial<Pick<Item,'edition'|'color'|'hardwareMetadata'>>;
   small?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
   const photo = item.kind==='console'?hardwarePhotoFor(item):undefined;
-  const src = item.kind==='game'?coverFor(item.catalogId):photo?.src;
+  const src = item.kind==='game'?coverFor(item.catalogId):photo?.src??item.hardwareMetadata?.logo?.url;
   useEffect(()=>setFailed(false),[src]);
   return (
     <div
@@ -187,7 +188,7 @@ const Cover = memo(function Cover({
         <img
           src={src}
           srcSet={coverSrcSet(item.catalogId)}
-          alt={`${item.title} cover`}
+          alt={item.kind==='console'&&!photo?`${item.title} — generic IGDB asset`:`${item.title} cover`}
           loading="lazy"
           decoding="async"
           onError={() => setFailed(true)}
@@ -210,7 +211,7 @@ const Cover = memo(function Cover({
   );
 }, (before, after) => before.small === after.small &&
   before.item.kind === after.item.kind && before.item.title === after.item.title &&
-  before.item.catalogId === after.item.catalogId && before.item.edition === after.item.edition && before.item.color === after.item.color);
+  before.item.catalogId === after.item.catalogId && before.item.edition === after.item.edition && before.item.color === after.item.color && before.item.hardwareMetadata?.logo?.url===after.item.hardwareMetadata?.logo?.url);
 function RailButton({
   label,
   children,
@@ -355,6 +356,7 @@ export default function Home() {
   const [catalogQuery, setCatalogQuery] = useState('');
   const [hardwareFilter,setHardwareFilter]=useState('All hardware');
   const [catalogCategory,setCatalogCategory]=useState('All hardware');
+  const [hardwareSource,setHardwareSource]=useState('igdb');
   const [addKind, setAddKind] = useState<Kind>('game');
   const gameSearch=useGameSearch(catalogQuery,addOpen && addKind==='game');
   const catalogResults=addKind==='game'?gameSearch.results:catalog.filter(i=>i.kind===addKind && `${i.title} ${i.subtitle} ${i.platform}`.toLowerCase().includes(catalogQuery.toLowerCase()) && (catalogCategory==='All hardware'||i.hardwareCategory===catalogCategory));
@@ -1276,7 +1278,7 @@ export default function Home() {
               Add to {isWishlist ? 'your wishlist' : 'your collection'}
             </DialogTitle>
             <DialogDescription>
-              {addKind==='game'?'Search IGDB for games, or create your own entry.':'Search hardware by model, brand, or special edition.'}
+              {addKind==='game'?'Search IGDB for games, or create your own entry.':'Search IGDB platforms and revisions, or use the existing catalog.'}
             </DialogDescription>
             {['consoles','hardwareWishlist'].includes(section) && (
               <Tabs
@@ -1292,7 +1294,7 @@ export default function Home() {
                 </TabsList>
               </Tabs>
             )}
-            {addKind==='console' && <Picker label="Hardware category" value={catalogCategory} options={['All hardware',...hardwareCategories.filter(c=>c!=='PCs')]} onChange={setCatalogCategory}/>}
+            {addKind==='console' && <><div className="hardware-sections" aria-label="Hardware catalog source"><button aria-pressed={hardwareSource==='igdb'} onClick={()=>setHardwareSource('igdb')}>IGDB</button><button aria-pressed={hardwareSource==='legacy'} onClick={()=>setHardwareSource('legacy')}>Existing catalog</button></div>{hardwareSource==='legacy'&&<Picker label="Hardware category" value={catalogCategory} options={['All hardware',...hardwareCategories.filter(c=>c!=='PCs')]} onChange={setCatalogCategory}/>}</>}
             <label className="search-box">
               <Search size={18} />
               <input
@@ -1308,6 +1310,7 @@ export default function Home() {
               />
             </label>
             {addKind==='game' && <p className="muted" role="status">{gameSearch.loading?'Searching IGDB…':gameSearch.error || (catalogQuery.trim().length<2?'Type at least 2 characters to search IGDB.':'Games provided by IGDB')}</p>}
+            {addKind==='console'&&hardwareSource==='igdb'?<HardwareSearch query={catalogQuery} items={data.items} onSelect={entry=>{setDraft(makeItem('console',entry.title,!isWishlist,entry));setAddOpen(false);}}/>:
             <div className="catalog-results">
               {catalogResults                .map((c) => {
                   const exists = data.items.some((i) => i.catalogId === c.id);
@@ -1316,7 +1319,7 @@ export default function Home() {
                       className="catalog-result"
                       key={c.id}
                       onClick={() => {
-                        if (exists) {
+                        if (exists && c.kind==='game') {
                           const item = data.items.find(
                             (i) => i.catalogId === c.id,
                           )!;
@@ -1335,6 +1338,7 @@ export default function Home() {
                       <span>
                         <strong>{c.title}</strong>
                         <small>{c.subtitle}</small>
+                        {exists&&c.kind==='console'&&<small>Already in collection · Add another unit</small>}
                       </span>
                       {exists ? <Check size={18} /> : <Plus size={18} />}
                     </button>
@@ -1345,7 +1349,7 @@ export default function Home() {
                     No catalog match. You can add this title below.
                   </p>
                 )}
-            </div>
+            </div>}
             <button
               className="secondary"
               onClick={() => {
@@ -1359,7 +1363,7 @@ export default function Home() {
                 : 'Add a custom entry'}
             </button>
             <p className="dialog-footnote">
-              {addKind==='game'?'Game catalog powered by IGDB':`${hardwareCatalog.length} hardware models · Custom entries welcome`}
+              {addKind==='game'?'Game catalog powered by IGDB':hardwareSource==='igdb'?'Hardware data provided by IGDB · Custom entries welcome':`${hardwareCatalog.length} existing hardware models · Custom entries welcome`}
             </p>
           </DialogContent>
         </Dialog>
@@ -1391,6 +1395,7 @@ export default function Home() {
                           .filter(Boolean)
                           .join(' · ')}
                   </SheetDescription>
+                  {selected.kind==='console'&&selected.hardwareMetadata&&<HardwareMetadataDetails metadata={selected.hardwareMetadata}/>}
                   <div className="detail-actions">
                     <button
                       className="primary"
@@ -1820,6 +1825,7 @@ function Editor({
             />
           </Field>
           {item.kind==='console' && <Field label="Hardware category"><Picker label="Hardware category" value={hardwareCategory(form)} options={hardwareCategories.filter(c=>c!=='PCs')} onChange={v=>set('hardwareCategory',v as HardwareCategory)}/></Field>}
+          {item.kind==='console'&&form.hardwareMetadata&&<HardwareMetadataDetails metadata={form.hardwareMetadata}/>}
           {item.kind==='console' && variantsFor(form.catalogId).length>0 && <section className="hardware-variant-editor">
             <Field label="Edition / color variant">
               <Picker label="Hardware variant" value={variantFor(form)?.label??'Custom / other'} options={[...variantsFor(form.catalogId).map(v=>v.label),'Custom / other']} onChange={label=>setForm(f=>selectHardwareVariant(f,label))}/>

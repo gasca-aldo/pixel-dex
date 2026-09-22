@@ -951,6 +951,13 @@ h1 {
   overflow: auto;
   margin: 0 -8px;
 }
+.igdb-hardware-search { min-width: 0; display: grid; gap: 12px; }
+.igdb-hardware-search h3:focus { outline: 2px solid var(--primary); outline-offset: 3px; }
+.igdb-hardware-search .catalog-result { width: 100%; min-height: 44px; }
+.igdb-hardware-search strong, .igdb-hardware-details { overflow-wrap: anywhere; }
+.igdb-hardware-details { min-width: 0; display: grid; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.igdb-hardware-details img { max-width: 100%; width: 160px; height: 90px; object-fit: contain; }
+.igdb-hardware-details ul { padding-left: 18px; }
 .catalog-result {
   display: flex;
   gap: 14px;
@@ -1434,6 +1441,9 @@ h1 {
   }
 }
 @media (max-width: 380px) {
+  .build-card-top { flex-wrap: wrap; gap: 8px; }
+  .component-preview > div { grid-template-columns: 1fr; gap: 4px; }
+  .component-preview strong { min-width: 0; overflow-wrap: anywhere; }
   .form-grid {
     grid-template-columns: 1fr;
   }
@@ -1446,6 +1456,7 @@ h1 {
   }
   .page-heading {
     gap: 10px;
+    flex-wrap: wrap;
   }
   .page-heading .primary {
     white-space: normal;

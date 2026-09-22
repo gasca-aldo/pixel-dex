@@ -6,7 +6,8 @@ import {readSearchResponse} from '../lib/search-response.ts';
 let source=await readFile(new URL('../lib/igdb-server.ts',import.meta.url),'utf8');
 source=source.replace("import {DurableObject} from 'cloudflare:workers';",'class DurableObject {constructor(ctx,env){this.ctx=ctx;this.env=env;}}');
 source=source.replace("'./igdb-map'",JSON.stringify(new URL('../lib/igdb-map.ts',import.meta.url).href));
-const {GameCatalog}=await import('data:text/javascript;base64,'+Buffer.from(stripTypeScriptTypes(source)).toString('base64'));
+source=source.replace("'./igdb-hardware'",JSON.stringify(new URL('../lib/igdb-hardware.ts',import.meta.url).href));
+const {GameCatalog,catalogRequest}=await import('data:text/javascript;base64,'+Buffer.from(stripTypeScriptTypes(source)).toString('base64'));
 function service(){
  const data=new Map();
  const storage={get:async k=>data.get(k),put:async(k,v)=>{if(typeof k==='string')data.set(k,v);else for(const [key,value]of Object.entries(k))data.set(key,value);},getAlarm:async()=>1};
@@ -34,6 +35,26 @@ test('direct matches do not wait for related lookup; cached reads bypass slow se
   const related=await instance.fetch(new Request('https://catalog/?q=pokemon%20gold&related=1'));
   assert.deepEqual((await related.json()).results.map(g=>g.title),[gold.name,heart.name]);
   assert.equal(calls,2);
+ }finally{globalThis.fetch=original;}
+});
+
+test('hardware routes reuse Twitch auth and query only linked endpoints',async()=>{
+ const original=globalThis.fetch;const upstream=[];let authorizations=0;
+ globalThis.fetch=async(url,init)=>{
+  if(String(url).includes('oauth2')){authorizations++;return Response.json({access_token:'test',expires_in:3600});}
+  assert.equal(init.headers.Authorization,'Bearer test');upstream.push(String(url).split('/').at(-1));
+  const rows={platforms:[{id:130,name:'Nintendo Switch',versions:[503]}],platform_versions:[{id:503,name:'OLED Model',platform_logo:606,platform_version_release_dates:[799]}],platform_version_release_dates:[{id:799,y:2021,m:10,date_format:{format:'YYYYMM'},release_region:{region:'worldwide'}}],platform_logos:[{id:606,image_id:'plgu'}]};
+  return Response.json(rows[upstream.at(-1)]);
+ };
+ try{
+  const {instance}=service();const env={GAME_CATALOG:{idFromName:()=> 'igdb',get:()=>({fetch:url=>instance.fetch(new Request(url))})}};
+  const url='https://example.test/api/catalog/hardware/platforms/130/versions/503';
+  const response=await catalogRequest(new Request(url),env);assert.equal(response.status,200);
+  const data=await response.json();assert.equal(data.results[0].releases[0].value,'2021-10');
+  assert.deepEqual(upstream,['platforms','platform_versions','platform_version_release_dates','platform_logos']);assert.equal(authorizations,1);
+  await catalogRequest(new Request(url),env);assert.equal(upstream.length,4);
+  assert.equal((await catalogRequest(new Request(url,{method:'POST'}),env)).status,405);
+  assert.equal((await catalogRequest(new Request('https://example.test/api/catalog/hardware/platforms/bad'),env)).status,404);
  }finally{globalThis.fetch=original;}
 });
 test('closely spaced searches wait for their slot instead of returning search busy',async()=>{

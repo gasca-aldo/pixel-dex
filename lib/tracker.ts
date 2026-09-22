@@ -1,6 +1,7 @@
 import {validReleaseCatalog,releaseRegions,type ReleaseCatalog,type ReleaseRegion} from './catalog-releases.ts';
 import {variantsFor} from './hardware-variants.ts';
 import {hardwareCatalog,hardwareCategories,type HardwareCategory} from './hardware-catalog.ts';
+import {hardwareId,validHardwareMetadata,type HardwareMetadata} from './igdb-hardware-map.ts';
 export type Kind = 'game' | 'console' | 'build';
 export type Status = 'Backlog' | 'Playing' | 'Paused' | 'Completed' | 'Dropped';
 export type Visibility = 'Private' | 'Unlisted' | 'Public';
@@ -9,6 +10,9 @@ export type Upgrade = { date: string; type: string; from: string; to: string };
 export type Item = {
   id: string;
   catalogId?: string;
+  igdbPlatformId?: number;
+  igdbPlatformVersionId?: number;
+  hardwareMetadata?: HardwareMetadata;
   hardwareCategory?: HardwareCategory;
   kind: Kind;
   title: string;
@@ -32,6 +36,9 @@ export type Item = {
   createdAt: number;
 };
 export type CatalogItem = {
+  igdbPlatformId?: number;
+  igdbPlatformVersionId?: number;
+  hardwareMetadata?: HardwareMetadata;
   id: string;
   title: string;
   kind: 'game' | 'console';
@@ -126,6 +133,9 @@ export function makeItem(
   return {
     id: globalThis.crypto.randomUUID(),
     ...(entry ? { catalogId: entry.id, ...(entry.hardwareCategory?{hardwareCategory:entry.hardwareCategory}:{}) } : {}),
+    ...(entry?.igdbPlatformId!==undefined?{igdbPlatformId:entry.igdbPlatformId}:{}),
+    ...(entry?.igdbPlatformVersionId!==undefined?{igdbPlatformVersionId:entry.igdbPlatformVersionId}:{}),
+    ...(entry?.hardwareMetadata?{hardwareMetadata:entry.hardwareMetadata}:{}),
     kind,
     title,
     owned,
@@ -139,7 +149,7 @@ export function makeItem(
     releaseDate: entry?.releaseDate ?? '',
     ...(entry?.releaseCatalog?{releaseCatalog:entry.releaseCatalog,releaseSource:entry.releaseSource,releaseRegion:entry.releaseRegion}:{}),
     ...(entry?.releaseStatus ? {releaseStatus:entry.releaseStatus} : {}),
-    edition: variantsFor(entry?.id)[0]?.edition ?? entry?.edition ?? 'Standard',
+    edition: variantsFor(entry?.id)[0]?.edition ?? entry?.edition ?? (kind==='console'?'':'Standard'),
     color: variantsFor(entry?.id)[0]?.color ?? '',
     components: [],
     history: [],
@@ -274,6 +284,9 @@ export function validCollection(value: unknown): value is Collection {
           'color',
         ].every((k) => typeof i[k as keyof Item] === 'string') &&
         (!i.catalogId || typeof i.catalogId === 'string') &&
+        (i.igdbPlatformId===undefined||hardwareId(i.igdbPlatformId)) &&
+        (i.igdbPlatformVersionId===undefined||(hardwareId(i.igdbPlatformVersionId)&&hardwareId(i.igdbPlatformId))) &&
+        (i.hardwareMetadata===undefined||(validHardwareMetadata(i.hardwareMetadata)&&i.hardwareMetadata.igdbPlatformId===i.igdbPlatformId&&i.hardwareMetadata.igdbPlatformVersionId===i.igdbPlatformVersionId)) &&
         (i.hardwareCategory===undefined || hardwareCategories.includes(i.hardwareCategory)) &&
         (i.releaseSource===undefined||['catalog','manual'].includes(i.releaseSource)) &&
         (i.releaseRegion===undefined||releaseRegions.includes(i.releaseRegion)) &&
