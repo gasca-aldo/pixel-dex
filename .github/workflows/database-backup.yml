@@ -1,10 +1,9 @@
 name: Database backup (cloud)
 on:
   workflow_dispatch:
-  # Enable only after manual cloud backup + download validation pass:
-  # schedule:
-  #   - cron: '0 9 * * *'
-  #     timezone: America/Tijuana
+  schedule:
+    - cron: '0 9 * * *'
+      timezone: America/Tijuana
 permissions:
   contents: read
 concurrency:
