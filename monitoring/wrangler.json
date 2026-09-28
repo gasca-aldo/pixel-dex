@@ -1,0 +1,11 @@
+{
+ "name":"pixel-dex-monitor",
+ "main":"worker.ts",
+ "compatibility_date":"2026-09-21",
+ "workers_dev":false,
+ "preview_urls":false,
+ "triggers":{"crons":["*/5 * * * *"]},
+ "durable_objects":{"bindings":[{"name":"MONITOR_STATE","class_name":"MonitorState"}]},
+ "migrations":[{"tag":"monitor-v1","new_sqlite_classes":["MonitorState"]}],
+ "observability":{"enabled":true,"logs":{"enabled":true,"head_sampling_rate":1,"invocation_logs":false},"traces":{"enabled":false}}
+}

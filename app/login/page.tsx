@@ -6,6 +6,10 @@ import { updatePasswordForOwner } from '@/lib/password-update';
 import { createIdentityGuard } from '@/lib/auth-identity';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {authEmailError} from '@/lib/auth-email-error';
+import {AuthCaptcha} from '@/components/auth-captcha';
+import {authCaptchaToken} from '@/lib/auth-captcha';
+const captchaSitekey=process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
 type Mode = 'login' | 'signup' | 'reset';
 export default function LoginPage() {
@@ -19,6 +23,8 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [captchaToken,setCaptchaToken]=useState('');
+  const [captchaEpoch,setCaptchaEpoch]=useState(0);
   useEffect(() => {
     let active = true;
     const auth = getSupabase().auth;
@@ -35,20 +41,21 @@ export default function LoginPage() {
     if(busyRef.current) return;
     busyRef.current = true; setBusy(true); setError(''); setMessage('');
     try { await action(); } catch(e) {setError(e instanceof Error ? e.message : 'Unable to connect. Please try again.');}
-    finally {busyRef.current = false; setBusy(false);}
+    finally {busyRef.current = false; setBusy(false);setCaptchaToken('');setCaptchaEpoch(n=>n+1);}
   }
-  function changeMode(next: Mode) {setMode(next); setError(''); setMessage(''); setPassword('');}
+  function changeMode(next: Mode) {setCaptchaToken('');setCaptchaEpoch(n=>n+1);setMode(next); setError(''); setMessage(''); setPassword('');}
   async function submit(e: FormEvent) {
     e.preventDefault();
     await run(async () => {
       const auth = getSupabase().auth;
       const redirectTo = window.location.origin + '/auth/callback';
+      const verifiedCaptcha=user?undefined:authCaptchaToken(captchaToken,true);
       if(user) {
         await updatePasswordForOwner(auth, user.id, password, identity.current.capture(), sendPasswordUpdate);
         setPassword('');
         window.location.replace('/');
       } else if(mode === 'login') {
-        const response=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.trim(),password})});
+        const response=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.trim(),password,captchaToken:verifiedCaptcha})});
         const result=await response.json() as {retryAfter?:number;error?:string;access_token?:string;refresh_token?:string};
         if(!response.ok) throw new Error(result.retryAfter ? `Too many attempts. Try again in ${Math.ceil(result.retryAfter/60)} minutes.` : result.error || 'Unable to sign in.');
         if(!result.access_token || !result.refresh_token) throw new Error('Unable to complete sign-in.');
@@ -56,8 +63,8 @@ export default function LoginPage() {
         if(error) throw error;
         window.location.assign('/');
       } else if(mode === 'signup') {
-        const {data, error} = await auth.signUp({email: email.trim(), password, options: {emailRedirectTo: redirectTo}});
-        if(error) throw error;
+        const {data, error} = await auth.signUp({email: email.trim(), password, options: {emailRedirectTo: redirectTo,captchaToken:verifiedCaptcha}});
+        if(error) throw new Error(authEmailError(error));
         setPassword('');
         if(data.session) {
           window.location.replace('/');
@@ -65,8 +72,8 @@ export default function LoginPage() {
         }
         setMessage('Check your email for a confirmation link. If you already have an account, sign in or reset your password.');
       } else {
-        const {error} = await auth.resetPasswordForEmail(email.trim(), {redirectTo});
-        if(error) throw error;
+        const {error} = await auth.resetPasswordForEmail(email.trim(), {redirectTo,captchaToken:verifiedCaptcha});
+        if(error) throw new Error(authEmailError(error));
         setMessage('If an account exists for this email, you will receive a password-reset link. Open the link to choose a new password.');
       }
     });
@@ -75,14 +82,16 @@ export default function LoginPage() {
     <a href="/" className="account-brand">pixel dex</a>
     <h1>{user ? 'Your account' : mode === 'signup' ? 'Create an account' : mode === 'reset' ? 'Reset your password' : 'Welcome back'}</h1>
     {loading ? <p role="status">Checking your account…</p> : <>
-      {user ? <p>Signed in as {user.email}</p> : mode !== 'reset' && <><Button disabled={busy} variant="outline" onClick={() => run(async () => {
+      {user ? <p>Signed in as {user.email}</p> : <><Button disabled={busy} onClick={() => run(async () => {
         const {error} = await getSupabase().auth.signInWithOAuth({provider:'google', options:{redirectTo: window.location.origin + '/auth/callback',queryParams:{prompt:'select_account'}}});
         if(error) throw error;
-      })}>Continue with Google</Button><p className="account-divider">or use email</p></>}
+      })}>Continue with Google</Button><p className="account-divider">Recommended during beta · or use email</p></>}
       <form onSubmit={submit}>
         {!user && <label>Email<Input type="email" autoComplete="email" required value={email} disabled={busy} onChange={e => setEmail(e.target.value)}/></label>}
         {(user || mode !== 'reset') && <label>{user ? 'New password' : 'Password'}<Input type="password" required minLength={user || mode === 'signup' ? 8 : 1} autoComplete={user || mode === 'signup' ? 'new-password' : 'current-password'} value={password} disabled={busy} onChange={e => setPassword(e.target.value)}/>{(user || mode === 'signup') && <small>Use at least 8 characters.</small>}</label>}
-        <Button type="submit" disabled={busy}>{busy ? 'Please wait…' : user ? 'Update password' : mode === 'signup' ? 'Create account' : mode === 'reset' ? 'Send reset link' : 'Sign in'}</Button>
+        {!user&&!captchaSitekey&&<p role="alert">Email sign-in is temporarily unavailable because the security check is not configured. Please try Google sign-in or return later.</p>}
+        {!user&&captchaSitekey&&<AuthCaptcha key={captchaEpoch} sitekey={captchaSitekey} onToken={setCaptchaToken}/>}
+        <Button type="submit" disabled={busy||(!user&&(!captchaSitekey||!captchaToken))}>{busy ? 'Please wait…' : user ? 'Update password' : mode === 'signup' ? 'Create account' : mode === 'reset' ? 'Send reset link' : 'Sign in'}</Button>
       </form>
       {user ? <><a href="/">Go to My collection</a><Button variant="outline" disabled={busy} onClick={() => run(async () => { const {error} = await getSupabase().auth.signOut(); if(error) throw error; setMessage('Signed out.'); })}>Sign out</Button></> : <nav aria-label="Account options"><Button variant="link" disabled={busy} onClick={() => changeMode(mode === 'signup' ? 'login' : 'signup')}>{mode === 'signup' ? 'Already have an account? Sign in' : 'Create an account'}</Button><Button variant="link" disabled={busy} onClick={() => changeMode(mode === 'reset' ? 'login' : 'reset')}>{mode === 'reset' ? 'Back to sign in' : 'Forgot password?'}</Button></nav>}
     </>}

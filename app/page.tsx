@@ -469,8 +469,10 @@ export default function Home() {
     if(current()) saving.current = false;
   }
   useEffect(() => {
+    if(!ready) return;
     document.documentElement.classList.toggle('dark', data.theme === 'dark');
-  }, [data.theme]);
+    try { localStorage.setItem('pixel-dex-theme', data.theme); } catch { /* Theme remains usable when storage is unavailable. */ }
+  }, [data.theme, ready]);
   useEffect(() => {
     if (!notice) return;
     const timeout = setTimeout(() => setNotice(''), 5000);

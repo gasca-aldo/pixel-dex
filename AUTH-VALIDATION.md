@@ -1,5 +1,14 @@
 # Authentication validation — 2026-09-14
 
+## Task 4E — PASSED for beta (September 23, 2026)
+
+- Exactly one sign-in email was requested for the user-authorized disposable account on September 22 at 21:59:55.692 UTC (14:59:55 Tijuana), using the unchanged production subject “Your sign-in link”.
+- Supabase accepted the request: HTTP 200 for `/auth/v1/otp`; the SDK completed without error at 21:59:58.002 UTC (2.310 seconds).
+- Gmail custom SMTP accepted the send, supported by Supabase's successful response and the subsequently confirmed inbox receipt; no raw SMTP transcript was captured.
+- No auth/SMTP errors were observed in the checked Supabase logs.
+- Inbox delivery was manually confirmed by the user on September 23. Exact receipt time/delivery latency was not provided.
+- No template or SMTP settings were changed, no additional account was created, and no password was changed. No further emails are needed. This is a one-time beta delivery validation, not continuous email monitoring or a deliberately induced SMTP-failure test.
+
 Deployed version: `acea7a8c-2a42-457b-a886-727e7fa084cb` (includes the reset-instruction correction; TypeScript and production build passed).
 Scope: authentication, sessions, password recovery and account isolation only. No database migrations, RLS changes or main-user collection/password changes.
 
@@ -82,3 +91,31 @@ Owner-scoped unsaved drafts are intentionally retained for recovery. They are no
 - AUTH-VALIDATION.md
 
 All other existing uncommitted project changes predated this task and were preserved.
+
+## Public beta Turnstile validation — September 28, 2026
+
+User-confirmed production results: recovery email received; recovery link worked; new password saved; recovered account signed in. New email signup required Turnstile and did not receive a normal usable session before confirmation. Confirmation email arrived and was completed; verified email/password login succeeded and loaded the correct user's collection. These are manual user validations, not automated inbox checks. No passwords or recovery links were collected.
+
+Direct production checks previously rejected missing and invalid CAPTCHA on signup, password login, and recovery with HTTP 400 / captcha_failed. Google chooser sign-in loaded the correct collection. This closes the pending successful auth-flow validation; email-provider capacity remains a separate public-beta blocker.
+
+### Auth theme follow-up — passed
+
+Deployed UI-only fix as Worker version `f0ceb44b-d7fe-4e52-ba0c-f873d73572f5`. Root cause: only the collection page applied the theme; full navigation discarded the document class. Persist only the non-sensitive display preference, restore it before page rendering, and use it for the Turnstile widget. Account auth, RLS, and rate limits are unchanged.
+
+Production browser checks: dark login/signup/reset form passed after full sign-out navigation; switched via existing collection theme control to light, then light login/signup/reset form passed. Turnstile rendered successfully in both themes. Build, TypeScript, and diff checks passed. A Google-hosted HTTP 500 occurred once during repeat sign-in; one fresh retry succeeded. No extra auth emails were sent during theme checks.
+
+## Task 6 — SMTP migration verification, September 28, 2026
+
+SMTP/delivery verification PASSED. Supabase custom SMTP is enabled with smtp-relay.brevo.com:587 and a 60-second minimum per-user interval; Gmail is no longer the configured relay. No credential values were read or changed. The production dashboard shows 30 auth emails/hour. Google remains enabled and email confirmation remains on; the previously verified Google OAuth code was unchanged.
+
+Existing Brevo real-time logs show both “Confirm your email address” and “Reset your password” sent and delivered on September 28 at 14:13 (dashboard display time), with subsequent open/click events. Two delivered, zero bounced, zero paused emails. No additional emails were sent for this audit. These are provider delivery events, not a fresh manual inbox-placement test.
+
+Brevo Free usage showed 298 emails remaining from the daily allowance after those two sends, with zero prepaid credits. Task 6 SMTP/delivery verification is complete; this is not unlimited public-traffic capacity sign-off. Supabase's 30/hour cap and Brevo's 300/day allowance constrain signup/recovery demand. The production privacy notice still names Gmail SMTP and must be updated for Brevo and its actual open/click tracking before public launch.
+
+## Task 6 COMPLETE — September 28, 2026
+
+Owner explicitly accepts Supabase 30 auth emails/hour and Brevo Free 300/day as beta capacity constraints, not launch blockers, with Google OAuth available. No provider, rate-limit, CAPTCHA, RLS, or capacity settings changed.
+
+Deployed version c50d5a81-68d8-414a-b3ee-8f93ab215b2d replaces Gmail SMTP disclosure with Brevo transactional delivery plus delivery/open/click tracking. Google is the primary recommended action on login, signup, and recovery forms. Email throttling and provider/network failures now show safe retry/Google guidance without leaking provider errors or promising delivery times.
+
+Verification: 15 focused automated tests passed, TypeScript/build/diff checks passed, production login/signup/recovery Google presentation and privacy text verified in browser. Failure messages tested with controlled automated errors, not by exhausting production quotas. No additional emails sent. Prior real delivery and user-confirmed auth-flow validations remain valid.

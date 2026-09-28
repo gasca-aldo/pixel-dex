@@ -26,4 +26,7 @@ test('failure logs contain only fixed categories and status, never URL, body, to
  assert.equal(response.status,503);assert.deepEqual(records,[{event:'pixel_dex_service_failure',area:'sharing',status:503}]);assert.ok(!(await response.text()).includes('secret'));
  await observeService(req(),async()=>new Response(null,{status:429}),r=>records.push(r));assert.equal(records.length,1);
  await observeService(req(),async()=>new Response(null,{status:503}),r=>records.push(r));assert.equal(records[1].area,'health');
+ for(const [path,area] of [['/api/catalog?q=secret','game_catalog'],['/api/catalog/hardware?q=secret','hardware_catalog']]){
+  await observeService(new Request('https://pixel.example'+path),async()=>new Response(null,{status:503}),r=>records.push(r));assert.equal(records.at(-1).area,area);
+ }
 });

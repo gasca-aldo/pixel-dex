@@ -1,18 +1,23 @@
 import {createHealthCheck,observeService} from './lib/service-health';
 const healthCheck = createHealthCheck();
 import {deleteAccount} from './lib/delete-account';
+import {authCaptchaToken} from './lib/auth-captcha';
 import app from 'vinext/server/fetch-handler';
 import {DurableObject} from 'cloudflare:workers';
-import {consumeAttempt, WINDOW_MS} from './lib/login-window.mjs';
+import {consumeAttempt, WINDOW_MS, MAX_ATTEMPTS} from './lib/login-window.mjs';
+import {limitCatalog,CATALOG_WINDOW_MS,CATALOG_MAX_ATTEMPTS,COVER_MAX_ATTEMPTS} from './lib/catalog-limit';
 import {catalogRequest,type CatalogEnv} from './lib/igdb-server';
 export {GameCatalog} from './lib/igdb-server';
 type Env=CatalogEnv & {SUPABASE_SECRET_KEY?:string;LOGIN_LIMITER:DurableObjectNamespace};
 export class LoginLimiter extends DurableObject<Env> {
- async fetch() {
+ async fetch(request:Request) {
+   const path=new URL(request.url).pathname;
+   const windowMs=path==='/catalog'||path==='/cover'?CATALOG_WINDOW_MS:WINDOW_MS;
+   const maxAttempts=path==='/catalog'?CATALOG_MAX_ATTEMPTS:path==='/cover'?COVER_MAX_ATTEMPTS:MAX_ATTEMPTS;
    return this.ctx.blockConcurrencyWhile(async()=>{
      const history=await this.ctx.storage.get<number[]>('attempts')??[];
-     const now=Date.now();const result=consumeAttempt(history,now);
-     if(result.allowed){await this.ctx.storage.put('attempts',result.history);await this.ctx.storage.setAlarm(now+WINDOW_MS);}
+     const now=Date.now();const result=consumeAttempt(history,now,windowMs,maxAttempts);
+     if(result.allowed){await this.ctx.storage.put('attempts',result.history);await this.ctx.storage.setAlarm(now+windowMs);}
      return Response.json({allowed:result.allowed,retryAfter:result.retryAfter});
    });
  }
@@ -23,7 +28,10 @@ async function handleRequest(request:Request,env:Env,ctx:ExecutionContext) {
    const url=new URL(request.url);
    if(url.pathname==='/api/health')return healthCheck(request,{url:process.env.NEXT_PUBLIC_SUPABASE_URL,key:process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY});
    if(url.pathname==='/api/account')return deleteAccount(request,{url:process.env.NEXT_PUBLIC_SUPABASE_URL!,secret:env.SUPABASE_SECRET_KEY});
-   if(url.pathname.startsWith('/api/catalog'))return catalogRequest(request,env);
+   if(url.pathname.startsWith('/api/catalog')){
+     const denied=await limitCatalog(request,env.LOGIN_LIMITER);
+     return denied??catalogRequest(request,env);
+   }
    if(url.pathname!=='/api/login')return app.fetch(request,env,ctx);
    if(request.method!=='POST')return json({error:'Method not allowed'},405,{Allow:'POST'});
    if(request.headers.get('origin')!==url.origin)return json({error:'Invalid origin'},403);
@@ -40,12 +48,15 @@ async function handleRequest(request:Request,env:Env,ctx:ExecutionContext) {
      const raw=await request.text();if(raw.length>8192)return json({error:'Request too large'},413);
      const body=JSON.parse(raw);
      if(typeof body.email!=='string'||typeof body.password!=='string'||body.email.length>320||body.password.length>4096)return json({error:'Enter your email and password'},400);
+     let captchaToken:string|undefined;
+     try{captchaToken=authCaptchaToken(body.captchaToken,Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY));}
+     catch{return json({error:'Complete a new security check and try again.'},400);}
      const response=await fetch(process.env.NEXT_PUBLIC_SUPABASE_URL+'/auth/v1/token?grant_type=password',{
        method:'POST',headers:{apikey:process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,'Content-Type':'application/json'},
-       body:JSON.stringify({email:body.email.trim(),password:body.password}),signal:AbortSignal.timeout(15000)
+       body:JSON.stringify({email:body.email.trim(),password:body.password,gotrue_meta_security:{captcha_token:captchaToken}}),signal:AbortSignal.timeout(15000)
      });
      const result=await response.json() as {access_token?:string;refresh_token?:string;error_code?:string};
-     if(!response.ok)return json({error:response.status===429?'Please wait before trying again.':result.error_code==='email_not_confirmed'?'Please confirm your email before signing in.':'Unable to sign in. Check your email and password.'},response.status===429?429:400);
+     if(!response.ok)return json({error:response.status===429?'Please wait before trying again.':result.error_code==='captcha_failed'?'Security check failed. Please complete a new check and try again.':result.error_code==='email_not_confirmed'?'Please confirm your email before signing in.':'Unable to sign in. Check your email and password.'},response.status===429?429:400);
      if(!result.access_token||!result.refresh_token)return json({error:'Unable to complete sign-in'},502);
      return json({access_token:result.access_token,refresh_token:result.refresh_token});
    } catch {return json({error:'Unable to connect. Please try again.'},503);}

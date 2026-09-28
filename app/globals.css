@@ -2623,11 +2623,12 @@ h1 {
 }
 
 .account-page { min-height:100dvh; display:grid; place-items:center; padding:32px 20px; background:var(--background); color:var(--foreground); }
-.account-card { width:100%; max-width:420px; padding:32px; border:1px solid var(--border); border-radius:20px; background:var(--card); display:grid; gap:20px; }
+.account-card { min-width:0; width:100%; max-width:420px; padding:32px; border:1px solid var(--border); border-radius:20px; background:var(--card); display:grid; gap:20px; }
 .account-brand { font-size:22px; font-weight:700; color:var(--primary); text-decoration:none; }
 .account-card h1 { font-size:26px; font-weight:600; margin:0; }
 .account-card form, .account-card label { display:grid; gap:10px; }
 .account-card form { gap:20px; }
+.account-card nav button { white-space:normal; height:auto; min-height:32px; }
 .account-card nav { display:flex; flex-wrap:wrap; justify-content:center; }
 .account-divider, .account-local-note { font-size:13px; color:var(--muted-foreground); }
 .account-divider { text-align:center; margin:0; }

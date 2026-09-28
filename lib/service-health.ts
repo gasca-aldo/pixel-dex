@@ -27,7 +27,7 @@ export function createHealthCheck(checkFetch: typeof fetch = (input, init) => fe
 
 export async function observeService(request: Request, run: () => Promise<Response>, report: (record: object) => void = console.error): Promise<Response> {
   const path = new URL(request.url).pathname;
-  const area = path === '/api/health' ? 'health' : path === '/api/login' ? 'login' : path === '/api/account' ? 'account' : path.startsWith('/api/catalog') ? 'catalog' : path.startsWith('/p/') ? 'sharing' : 'app';
+  const area = path === '/api/health' ? 'health' : path === '/api/login' ? 'login' : path === '/api/account' ? 'account' : path.startsWith('/api/catalog/hardware') ? 'hardware_catalog' : path.startsWith('/api/catalog') ? 'game_catalog' : path.startsWith('/p/') ? 'sharing' : 'app';
   let response: Response;
   try { response = await run(); }
   catch { response = Response.json({error:'The service is temporarily unavailable. Please try again.'},{status:503,headers:{'Cache-Control':'no-store'}}); }

@@ -1,5 +1,7 @@
 # Pixel Dex MVP roadmap
 
+Task 4E — **PASSED for beta, September 23, 2026**: Supabase request accepted, Gmail SMTP send accepted, no auth/SMTP errors observed, and inbox delivery manually confirmed. Exactly one controlled sign-in email sent; no further emails needed. See AUTH-VALIDATION.md for timing and evidence.
+
 Updated September 15, 2026. Cloudflare hosting is already running.
 
 Authentication validation and cleanup are complete: actual Google sign-in, account isolation during saves, real password recovery (valid, expired, used, and cross-browser links), new-password sign-in, expired-session rejection, and automatic session renewal passed. All 85 automated tests passed. See AUTH-VALIDATION.md for evidence and the distinction between observed and user-verified results. Older authentication-pending statements below are historical and superseded. The final disposable account was deleted through the app after confirmation; temporary authentication scripts, logs, and the saved test session have been removed.
@@ -76,3 +78,11 @@ September 14: deployed a read-only health endpoint and sanitized server-failure 
 ## Completion rule
 
 An item is complete only when its behavior is implemented and its relevant checks have passed. Keep local automated results separate from production account/device tests, and identify any user-side setup still required.
+
+## Task 6 COMPLETE — September 28, 2026
+
+Owner explicitly accepts Supabase 30 auth emails/hour and Brevo Free 300/day as beta capacity constraints, not launch blockers, with Google OAuth available. No provider, rate-limit, CAPTCHA, RLS, or capacity settings changed.
+
+Deployed version c50d5a81-68d8-414a-b3ee-8f93ab215b2d replaces Gmail SMTP disclosure with Brevo transactional delivery plus delivery/open/click tracking. Google is the primary recommended action on login, signup, and recovery forms. Email throttling and provider/network failures now show safe retry/Google guidance without leaking provider errors or promising delivery times.
+
+Verification: 15 focused automated tests passed, TypeScript/build/diff checks passed, production login/signup/recovery Google presentation and privacy text verified in browser. Failure messages tested with controlled automated errors, not by exhausting production quotas. No additional emails sent. Prior real delivery and user-confirmed auth-flow validations remain valid.
