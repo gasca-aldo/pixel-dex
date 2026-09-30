@@ -328,7 +328,7 @@ function Brand({ onHome }: { onHome: () => void }) {
       }}
     >
       <span className="brand-icon">
-        <Gamepad2 size={23} />
+        <img src="/brand/pixel-dex-icon.svg" width="23" height="23" alt="" />
       </span>
       <span className="brand-name">pixel dex</span>
     </button>

@@ -299,6 +299,16 @@
   gap: 24px;
   padding-block: 48px;
 }
+.landing-footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--foreground);
+  letter-spacing: -0.6px;
+}
+.landing-footer-brand img {
+  flex: none;
+}
 .landing-footer strong {
   font-size: 18px;
 }
