@@ -93,3 +93,38 @@ test('release refresh uses its own expiring cache and never replaces data on ups
   assert.equal((await instance.fetch(new Request('https://catalog/?release=bad'))).status,400);
  }finally{globalThis.fetch=original;}
 });
+
+test('literal miss uses one token fallback, ranks aliases, and caches equivalent spellings',async()=>{
+ const original=globalThis.fetch;const queries=[];
+ globalThis.fetch=async(url,init)=>{
+  if(String(url).includes('oauth2'))return Response.json({access_token:'test',expires_in:3600});
+  queries.push(init.body);
+  if(init.body.includes('where (slug ~ *'))return Response.json([{id:42,name:'Pokémon Legends: Z-A',alternative_names:[{name:'Pocket Monsters Legends ZA'}]}, {id:43,name:'Pokémon Bazaar'}]);
+  return Response.json([]);
+ };
+ try{
+  const {instance}=service();
+  const response=await instance.fetch(new Request('https://catalog/?q=pokemon%20za'));
+  assert.equal(response.status,200);const body=await response.json();
+  assert.deepEqual(body.results.map(g=>g.title),['Pokémon Legends: Z-A']);
+  assert.deepEqual(body.results[0].aliases,['Pocket Monsters Legends ZA']);assert.equal(queries.length,3);
+  const cached=await instance.fetch(new Request('https://catalog/?q=Pok%C3%A9mon%20Z-A'));
+  assert.deepEqual(await cached.json(),body);assert.equal(queries.length,3);
+ }finally{globalThis.fetch=original;}
+});
+test('failed token fallback without relevant direct results reports an error, not a cached empty success',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async(url,init)=>String(url).includes('oauth2')?Response.json({access_token:'test',expires_in:3600}):init.body.includes('where (slug ~ *')?new Response('',{status:503}):Response.json([]);
+ try{const {instance,data}=service();assert.equal((await instance.fetch(new Request('https://catalog/?q=pokemon%20za'))).status,503);assert.equal(data.has('search:v12:pokemon za:direct'),false);}
+ finally{globalThis.fetch=original;}
+});
+
+test('a partial prefix such as Zany does not suppress ZA token expansion',async()=>{
+ const original=globalThis.fetch;let calls=0;
+ globalThis.fetch=async(url,init)=>{
+  if(String(url).includes('oauth2'))return Response.json({access_token:'test',expires_in:3600});
+  calls++;return Response.json(init.body.includes('where (slug ~ *')?[{id:42,name:'Pokémon Legends: Z-A'}]:[{id:43,name:'Pokémon Zany Cards'},{id:44,name:'Pokémon ZA',game_type:{type:'Mod'}}]);
+ };
+ try{const {instance}=service();const response=await instance.fetch(new Request('https://catalog/?q=pokemon%20za'));assert.deepEqual((await response.json()).results.map(g=>g.id),['igdb:42','igdb:43']);assert.equal(calls,2);}
+ finally{globalThis.fetch=original;}
+});

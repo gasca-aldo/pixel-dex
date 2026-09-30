@@ -1,4 +1,5 @@
 'use client';
+import {matchesTitleSearch} from '@/lib/title-search';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Library,
@@ -277,7 +278,7 @@ export function UpcomingPage({
   const today = useToday();
   const [query, setQuery] = useState('');
   const sections = upcomingSections(
-    items.filter((i) => i.title.toLowerCase().includes(query.toLowerCase())),
+    items.filter((i) => matchesTitleSearch(query,i.title,...(i.aliases??[]),i.platform)),
     today,
   );
   const count = sections.reduce(

@@ -1,3 +1,4 @@
+import {matchesTitleSearch} from './title-search.ts';
 import {validReleaseCatalog,releaseRegions,type ReleaseCatalog,type ReleaseRegion} from './catalog-releases.ts';
 import {variantsFor} from './hardware-variants.ts';
 import {hardwareCatalog,hardwareCategories,type HardwareCategory} from './hardware-catalog.ts';
@@ -16,6 +17,7 @@ export type Item = {
   hardwareCategory?: HardwareCategory;
   kind: Kind;
   title: string;
+  aliases?: string[];
   owned: boolean;
   platform: string;
   launcher: string;
@@ -41,6 +43,7 @@ export type CatalogItem = {
   hardwareMetadata?: HardwareMetadata;
   id: string;
   title: string;
+  aliases?: string[];
   kind: 'game' | 'console';
   platform: string;
   subtitle: string;
@@ -132,6 +135,7 @@ export function makeItem(
 ): Item {
   return {
     id: globalThis.crypto.randomUUID(),
+    ...(entry?.aliases ? {aliases:[...entry.aliases]} : {}),
     ...(entry ? { catalogId: entry.id, ...(entry.hardwareCategory?{hardwareCategory:entry.hardwareCategory}:{}) } : {}),
     ...(entry?.igdbPlatformId!==undefined?{igdbPlatformId:entry.igdbPlatformId}:{}),
     ...(entry?.igdbPlatformVersionId!==undefined?{igdbPlatformVersionId:entry.igdbPlatformVersionId}:{}),
@@ -283,6 +287,7 @@ export function validCollection(value: unknown): value is Collection {
           'edition',
           'color',
         ].every((k) => typeof i[k as keyof Item] === 'string') &&
+        (i.aliases===undefined || (Array.isArray(i.aliases)&&i.aliases.every(a=>typeof a==='string'))) &&
         (!i.catalogId || typeof i.catalogId === 'string') &&
         (i.igdbPlatformId===undefined||hardwareId(i.igdbPlatformId)) &&
         (i.igdbPlatformVersionId===undefined||(hardwareId(i.igdbPlatformVersionId)&&hardwareId(i.igdbPlatformId))) &&
@@ -295,6 +300,7 @@ export function validCollection(value: unknown): value is Collection {
           ['date', 'year', 'tba', 'released'].includes(i.releaseStatus)) &&
         statuses.includes(i.status) &&
         Number.isFinite(i.rating) &&
+        Number.isInteger(i.rating * 2) &&
         i.rating >= 0 &&
         i.rating <= 5 &&
         Number.isFinite(i.createdAt) &&
@@ -341,10 +347,7 @@ export function filteredItems(
     .filter((i) => inSection(i, section))
     .filter(
       (i) =>
-        !query ||
-        `${i.title} ${i.platform} ${i.launcher} ${i.edition} ${i.color}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
+        matchesTitleSearch(query, i.title, ...(i.aliases??[]), i.platform, i.launcher, i.edition, i.color),
     )
     .filter(
       (i) =>

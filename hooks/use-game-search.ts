@@ -1,4 +1,5 @@
  'use client';
+import {normalizeTitle} from '@/lib/title-search';
 import {useEffect,useState} from 'react';
 import type {CatalogItem} from '@/lib/tracker';
 import {readSearchResponse} from '@/lib/search-response';
@@ -13,7 +14,7 @@ async function fetchResults(url:string){
 export function useGameSearch(query:string,enabled=true) {
  const [state,setState]=useState<{results:CatalogItem[];loading:boolean;error:string}>({results:[],loading:false,error:''});
  useEffect(()=>{
-  const q=query.trim(),key=q.toLowerCase();let cancelled=false;
+  const q=query.trim(),key=normalizeTitle(q);let cancelled=false;
   if(!enabled||q.length<2){setState({results:[],loading:false,error:''});return;}
   const cached=recentSearches.get(key);
   if(cached&&cached.until>Date.now()){setState({results:cached.results,loading:false,error:''});return;}

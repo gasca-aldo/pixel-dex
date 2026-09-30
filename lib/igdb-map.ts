@@ -1,34 +1,26 @@
+import {normalizeTitle,titleSearchScore} from './title-search.ts';
+export {normalizeTitle} from './title-search.ts';
 import {applyCatalogRelease,type ReleaseCatalog} from './catalog-releases.ts';
-export type RawGame = {id:number;name:string;collections?:number[];remakes?:number[];remasters?:number[];ports?:number[];first_release_date?:number;game_type?:{type:string};keywords?:{name:string}[];cover?:{image_id:string};platforms?:{id?:number;name:string}[];release_dates?:{platform?:number;m?:number;date?:number;date_format?:{format:string};y?:number;release_region?:{region:string};status?:{name:string}}[]};
+export type RawGame = {id:number;name:string;alternative_names?:{name:string}[];collections?:number[];remakes?:number[];remasters?:number[];ports?:number[];first_release_date?:number;game_type?:{type:string};keywords?:{name:string}[];cover?:{image_id:string};platforms?:{id?:number;name:string}[];release_dates?:{platform?:number;m?:number;date?:number;date_format?:{format:string};y?:number;release_region?:{region:string};status?:{name:string}}[]};
 export function releaseCatalogFor(game:RawGame):ReleaseCatalog {
  return {checkedAt:Date.now(),platforms:(game.platforms??[]).filter(p=>Number.isSafeInteger(p.id)).map(p=>({id:p.id!,name:p.name==='PC (Microsoft Windows)'?'PC':p.name})),dates:(game.release_dates??[]).map(d=>({platform:d.platform,...(Number.isInteger(d.m)&&d.m!>=1&&d.m!<=12?{month:d.m}:{}),region:d.release_region?.region??'',date:d.date&&Number.isFinite(d.date)&&Math.abs(d.date)<253402300800?new Date(d.date*1000).toISOString().slice(0,10):'',year:d.y&&d.y>=1900&&d.y<=9999?String(d.y):'',format:d.date_format?.format??'',status:d.status?.name??''}))};
 }
 export function mapGame(game:RawGame) {
  const platform=game.platforms?.find(p=>p.name==='PC (Microsoft Windows)')??game.platforms?.[0];
  const releaseCatalog=releaseCatalogFor(game);
- return applyCatalogRelease({id:`igdb:${game.id}`,title:game.name,kind:'game' as const,platform:platform?.name==='PC (Microsoft Windows)'?'PC':platform?.name??'',subtitle:game.platforms?.map(p=>p.name).join(' · ')||'IGDB',releaseDate:'',releaseStatus:'tba' as 'date'|'year'|'tba',releaseSource:'catalog' as const,releaseRegion:'Worldwide / earliest available' as const,releaseCatalog});
+ return applyCatalogRelease({id:`igdb:${game.id}`,title:game.name,aliases:(game.alternative_names??[]).map(a=>a.name),kind:'game' as const,platform:platform?.name==='PC (Microsoft Windows)'?'PC':platform?.name??'',subtitle:game.platforms?.map(p=>p.name).join(' · ')||'IGDB',releaseDate:'',releaseStatus:'tba' as 'date'|'year'|'tba',releaseSource:'catalog' as const,releaseRegion:'Worldwide / earliest available' as const,releaseCatalog});
 }
-export const gameFields='name,collections,remakes,remasters,ports,first_release_date,game_type.type,keywords.name,cover.image_id,platforms.id,platforms.name,release_dates.release_region.region,release_dates.status.name,release_dates.platform,release_dates.date,release_dates.date_format.format,release_dates.y,release_dates.m';
+export const gameFields='name,alternative_names.name,collections,remakes,remasters,ports,first_release_date,game_type.type,keywords.name,cover.image_id,platforms.id,platforms.name,release_dates.release_region.region,release_dates.status.name,release_dates.platform,release_dates.date,release_dates.date_format.format,release_dates.y,release_dates.m';
 export function searchBody(query:string) {
  return `search ${JSON.stringify(query)}; fields ${gameFields}; limit 50;`;
 }
-const titleKey=(title:string)=>title.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\bversion\b/g,'').trim().replace(/ +/g,' ');
-export function titleScore(title:string,query:string) {
- const name=titleKey(title),q=titleKey(query);
- if(!q)return 0;
- if(name===q)return 100;
- if(name.startsWith(q))return 90;
- const words=q.split(' ');
- if(words.every(word=>name.split(' ').includes(word)))return 80;
- if(words.every(word=>name.replace(/ /g,'').includes(word)))return 70;
- return 0;
-}
+export const titleScore=titleSearchScore;
 export function rankGames(games:RawGame[],query:string,anchor?:RawGame) {
  const unique=[...new Map(games.filter(isOfficialCandidate).map(game=>[game.id,game])).values()];
  const variants=new Set([...(anchor?.remakes??[]),...(anchor?.remasters??[]),...(anchor?.ports??[])]);
- const tier=(g:RawGame)=>g.id===anchor?.id?110:Math.max(titleScore(g.name,query),variants.has(g.id)?85:0,(g.collections??[]).some(id=>anchor?.collections?.includes(id))?40:0);
+ const tier=(g:RawGame)=>Math.max(titleScore(g.name,query,(g.alternative_names??[]).map(a=>a.name)),variants.has(g.id)?45:0,(g.collections??[]).some(id=>anchor?.collections?.includes(id))?40:0);
  const distance=(g:RawGame)=>g.first_release_date&&anchor?.first_release_date?Math.abs(g.first_release_date-anchor.first_release_date):Infinity;
- return unique.sort((a,b)=>tier(b)-tier(a)||(distance(a)-distance(b))||a.name.localeCompare(b.name)||a.id-b.id);
+ return unique.filter(g=>tier(g)>0).sort((a,b)=>tier(b)-tier(a)||(distance(a)-distance(b))||a.name.localeCompare(b.name)||a.id-b.id);
 }
 export function relatedBody(anchor:RawGame) {
  const ids=[...(anchor.remakes??[]),...(anchor.remasters??[]),...(anchor.ports??[])].filter(Number.isSafeInteger);
@@ -51,7 +43,17 @@ export function isOfficialCandidate(game:RawGame) {
 // Slugs provide accent-insensitive prefix matching without guessing game names.
 export function prefixBody(query:string) {
  const name=query.trim().replace(/\s+/g,' ');
- const slug=name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+ const slug=normalizeTitle(name).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
  const filters=slug.length>=2?[`slug ~ ${JSON.stringify(slug)}*`]:[`name ~ ${JSON.stringify(name)}*`];
  return `fields ${gameFields}; where (${filters.join(' | ')}); sort total_rating_count desc; limit 50;`;
+}
+
+// One bounded fallback for non-contiguous tokens and compact letter groups.
+export function tokenSearchBody(query:string) {
+ const tokens=normalizeTitle(query).split(' ').filter(Boolean).slice(0,8);
+ const filters=tokens.map(token=>{
+  const forms=[token,...(/^[a-z]{2,3}$/.test(token)?[token.split('').join('-'),token.split('').join(' ')]:[])];
+  return '('+forms.flatMap(form=>['slug','name','alternative_names.name'].map(field=>`${field} ~ *${JSON.stringify(form)}*`)).join(' | ')+')';
+ });
+ return filters.length?`fields ${gameFields}; where ${filters.join(' & ')}; sort total_rating_count desc; limit 50;`:null;
 }

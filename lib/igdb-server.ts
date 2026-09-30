@@ -1,5 +1,5 @@
 import {DurableObject} from 'cloudflare:workers';
-import {mapGame,releaseCatalogFor,gameFields,searchBody,prefixBody,rankGames,relatedBody,titleScore,type RawGame} from './igdb-map';
+import {normalizeTitle,mapGame,releaseCatalogFor,gameFields,searchBody,prefixBody,tokenSearchBody,rankGames,relatedBody,titleScore,type RawGame} from './igdb-map';
 import {HardwareCatalog,HARDWARE_RETENTION,type HardwareEndpoint} from './igdb-hardware';
 export type CatalogEnv={TWITCH_CLIENT_ID?:string;TWITCH_CLIENT_SECRET?:string;GAME_CATALOG:DurableObjectNamespace};
 const reply=(body:unknown,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
@@ -34,7 +34,7 @@ export class GameCatalog extends DurableObject<CatalogEnv> {
   }
   const enrich=url.searchParams.get('related')==='1';
   if(id?!/^[1-9]\d{0,9}$/.test(id):q.length<2||q.length>120)return reply({error:'Enter between 2 and 120 characters.'},400);
-  const base='search:v10:'+q.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const base='search:v12:'+normalizeTitle(q);
   const key=id?'game:'+id:base+(enrich?':related':':direct');
   try {
    const cached=await this.ctx.storage.get<Cached<unknown>>(key);
@@ -90,6 +90,10 @@ export class GameCatalog extends DurableObject<CatalogEnv> {
    // to full text for reordered words or aliases without a prefix match.
    let direct=await this.query(prefixBody(q));
    if(!rankGames(direct,q).length)direct=await this.query(searchBody(q));
+   if(!rankGames(direct,q).some(g=>titleScore(g.name,q,(g.alternative_names??[]).map(a=>a.name))>=80)) {
+    const fallback=tokenSearchBody(q);
+    if(fallback) try { direct.push(...await this.query(fallback)); } catch { if(!rankGames(direct,q).length) throw new Error('Catalog unavailable'); }
+   }
    games={until:Date.now()+3600000,body:direct};await this.ctx.storage.put(base+':raw',games);
   }
   let candidates=[...games.body];

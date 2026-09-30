@@ -27,6 +27,7 @@ export default function LoginPage() {
   const [captchaEpoch,setCaptchaEpoch]=useState(0);
   useEffect(() => {
     let active = true;
+    if(new URLSearchParams(window.location.search).get('mode') === 'signup') setMode('signup');
     const auth = getSupabase().auth;
     const current = identity.current.capture();
     void auth.getUser().then(({data}) => { if(active && current()) setUser(data.user); }).catch(() => { if(active && current()) setError('Unable to connect. Please reload to try again.'); }).finally(() => { if(active) setLoading(false); });

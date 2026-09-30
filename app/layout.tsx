@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './landing.css';
 export const metadata: Metadata = {
-  title: 'Pixel Dex — Your collection',
-  description: 'A personal home for your games, consoles, and PC builds.',
+  title: 'Pixel Dex — Your personal gaming journal',
+  description: 'Your games. Your hardware. Your journey. Pixel Dex is your personal gaming journal.',
   manifest: '/manifest.webmanifest',
 };
 export default function RootLayout({

@@ -49,7 +49,7 @@ test('exact game leads, followed by remake and nearby series entries, without fa
  const crystal={id:4,name:'Pokémon Crystal',collections:[10],first_release_date:130};
  const stadium={id:5,name:'Pokémon Stadium 2',first_release_date:130};
  const fan={id:6,name:'Pokémon Gold',keywords:[{name:'romhack'}]};
- assert.deepEqual(rankGames([stadium,crystal,fan,silver,heart,gold,gold],'pokemon gold',gold).map(g=>g.id),[1,2,3,4,5]);
+ assert.deepEqual(rankGames([stadium,crystal,fan,silver,heart,gold,gold],'pokemon gold',gold).map(g=>g.id),[1,2,3,4]);
  assert.ok(relatedBody(gold).includes('id = (2) | collections = (10)'));
  assert.equal(relatedBody({id:7,name:'Standalone'}),null);
 });
@@ -62,10 +62,10 @@ test('ranking also works outside Pokémon and keeps direct matches ahead of rela
 
 test('unfinished titles work with and without accents',()=>{
  for(const query of ['pokémon g','pokémon gol','pokemon gol']) {
-  assert.equal(titleScore('Pokémon Gold Version',query),90);
+  assert.equal(titleScore('Pokémon Gold Version',query),70);
   assert.ok(prefixBody(query).includes('slug ~ "'+query.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ /g,'-')+'"*'));
  }
- assert.equal(titleScore('The Legend of Zelda: Breath of the Wild','the legend of zel'),90);
+ assert.equal(titleScore('The Legend of Zelda: Breath of the Wild','the legend of zel'),70);
  assert.ok(prefixBody('zel').includes('slug ~ "zel"*'));
 });
 test('prefix inputs are quoted and cannot introduce query instructions',()=>{

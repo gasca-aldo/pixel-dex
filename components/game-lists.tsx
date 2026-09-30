@@ -1,4 +1,5 @@
 'use client';
+import {matchesTitleSearch} from '@/lib/title-search';
 import {useGameSearch} from '@/hooks/use-game-search';
 import { ProfileAddress, ShareLink } from '@/components/sharing-controls';
 import { useState, type ReactNode } from 'react';
@@ -130,7 +131,7 @@ function GamePicker({
 }) {
   const [query, setQuery] = useState('');
   const search=useGameSearch(query);
-  const local=items.filter(i=>i.kind==='game').map(gameReference).filter(g=>g.title.toLowerCase().includes(query.toLowerCase()));
+  const local=items.filter(i=>i.kind==='game'&&matchesTitleSearch(query,i.title,...(i.aliases??[]),i.platform)).map(gameReference);
   const remote=search.results.map(g=>({id:`catalog:${g.id}`,catalogId:g.id,title:g.title}));
   const choices=[...local,...remote.filter(g=>!local.some(l=>l.id===g.id))];
   return (
@@ -258,7 +259,7 @@ export function GameLists({ data, commit, renderArt }: CommonProps) {
   const [query, setQuery] = useState('');
   const list = (data.lists || []).find((l) => l.id === selected);
   const lists = (data.lists || [])
-    .filter((l) => l.title.toLowerCase().includes(query.toLowerCase()))
+    .filter((l) => matchesTitleSearch(query,l.title))
     .sort((a, b) => b.updatedAt - a.updatedAt);
   function save() {
     if (!draft) return;

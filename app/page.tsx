@@ -1,4 +1,7 @@
 'use client';
+import {RatingControl,RatingStars} from '@/components/rating';
+import {matchesTitleSearch} from '@/lib/title-search';
+import {LandingPage} from '@/components/landing-page';
 import {applyCatalogRelease,fetchReleaseCatalog,releaseRegions,type ReleaseRegion} from '@/lib/catalog-releases';
 import {refreshReleaseBatch} from '@/lib/release-refresh';
 import {hardwarePhotoFor,variantFor,variantsFor,selectHardwareVariant} from '@/lib/hardware-variants';
@@ -335,6 +338,7 @@ export default function Home() {
   const [data, setData] = useState<Collection>(() => ({...seedCollection(), items: [], lists: [], profile: undefined}));
   const dataRef = useRef(data);
   const [ready, setReady] = useState(false);
+  const [visitor, setVisitor] = useState(false);
   const [storageError, setStorageError] = useState('');
   const [section, setSection] = useState('dashboard');
   const [gamesView, setGamesView] = useState('collection');
@@ -359,7 +363,7 @@ export default function Home() {
   const [hardwareSource,setHardwareSource]=useState('igdb');
   const [addKind, setAddKind] = useState<Kind>('game');
   const gameSearch=useGameSearch(catalogQuery,addOpen && addKind==='game');
-  const catalogResults=addKind==='game'?gameSearch.results:catalog.filter(i=>i.kind===addKind && `${i.title} ${i.subtitle} ${i.platform}`.toLowerCase().includes(catalogQuery.toLowerCase()) && (catalogCategory==='All hardware'||i.hardwareCategory===catalogCategory));
+  const catalogResults=addKind==='game'?gameSearch.results:catalog.filter(i=>i.kind===addKind && matchesTitleSearch(catalogQuery,i.title,...(i.aliases??[]),i.subtitle,i.platform) && (catalogCategory==='All hardware'||i.hardwareCategory===catalogCategory));
   const [settings, setSettings] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [notice, setNotice] = useState('');
@@ -385,9 +389,11 @@ export default function Home() {
     let active = true;
     libraryEpoch.current += 1;
     let loaded = false;
+    let guest = false;
     let invalidated = false;
     const auth = getSupabase().auth;
     const {data: listener} = auth.onAuthStateChange((_event, session) => {
+      if(guest && session) { window.location.replace('/'); return; }
       if(loaded && (session?.user.id ?? null) !== owner.current) {
         invalidated=true; libraryEpoch.current += 1; setReady(false);
         dataRef.current={...seedCollection(),items:[],lists:[],profile:undefined};
@@ -399,7 +405,7 @@ export default function Home() {
       try {
         const {data: sessionData, error: sessionError} = await auth.getSession();
         if(sessionError) throw sessionError;
-        if(!sessionData.session) { window.location.replace('/login'); return; }
+        if(!sessionData.session) { if(active) { guest=true; setVisitor(true); } return; }
         const {data: verified, error: verifyError} = await auth.getUser();
         if(verifyError) {
           if(verifyError.status === 401 || verifyError.status === 403) { window.location.replace('/login'); return; }
@@ -667,6 +673,7 @@ export default function Home() {
     } catch {}
     return () => controller.abort();
   }, []);
+  if (visitor && !ready) return <LandingPage />;
   if (!ready) return <main className="account-page"><section className="account-card">
     <a className="account-brand" href="/login">pixel dex</a>
     {storageError ? <><h1>Unable to open your library</h1><p role="alert">{storageError}</p><button className="secondary" onClick={() => window.location.reload()}>Try again</button><a href="/login">Go to sign in</a></> : <p role="status">Checking your session…</p>}
@@ -1249,7 +1256,7 @@ export default function Home() {
                               : i.launcher}
                             {i.rating > 0 && i.owned && (
                               <span className="rating">
-                                <Star size={11} fill="currentColor" />
+                                <RatingStars value={i.rating} compact/>
                                 {i.rating}
                               </span>
                             )}
@@ -1449,10 +1456,7 @@ export default function Home() {
                         <div>
                           <dt>Rating</dt>
                           <dd className="stars">
-                            {selected.rating
-                              ? '★'.repeat(selected.rating) +
-                                '☆'.repeat(5 - selected.rating)
-                              : 'Not rated'}
+                            <RatingStars value={selected.rating}/>
                           </dd>
                         </div>
                         <div>
@@ -2033,24 +2037,7 @@ function Editor({
           </div>
           {item.kind === 'game' && (
             <Field label="Your rating">
-              <div className="rating-control">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button
-                    type="button"
-                    aria-label={`Rate ${n} out of 5`}
-                    aria-pressed={form.rating === n}
-                    key={n}
-                    onClick={() => set('rating', form.rating === n ? 0 : n)}
-                  >
-                    <Star
-                      size={25}
-                      fill={n <= form.rating ? 'currentColor' : 'none'}
-                      className={n <= form.rating ? 'filled' : ''}
-                    />
-                  </button>
-                ))}
-                <span>{form.rating ? `${form.rating} / 5` : 'Not rated'}</span>
-              </div>
+              <RatingControl value={form.rating} onChange={value=>set('rating',value)}/>
             </Field>
           )}
           {item.kind === 'build' && (
